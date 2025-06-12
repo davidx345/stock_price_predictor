@@ -1,0 +1,14 @@
+[build]
+  command = "chmod +x build.sh && ./build.sh"
+
+[build.env]
+  PYTHON_VERSION = "3.9.18"
+  
+[[services]]
+  type = "web"
+  env = "python"
+  buildCommand = "pip install -r requirements.txt"
+  startCommand = "streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true"
+  
+  [services.env]
+    PYTHONPATH = "./src"
