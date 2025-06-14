@@ -17,7 +17,7 @@ class StockDataCollector:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-      def fetch_stock_data(self, symbol: str, period: str = "5y") -> Optional[pd.DataFrame]:
+    def fetch_stock_data(self, symbol: str, period: str = "5y") -> Optional[pd.DataFrame]:
         """
         Fetch stock data from Yahoo Finance with comprehensive error handling
         
@@ -138,7 +138,7 @@ class StockDataCollector:
         except Exception as e:
             self.logger.error(f"Error fetching data for {symbol}: {str(e)}")
             return None
-      def get_stock_info(self, symbol: str) -> Dict:
+    def get_stock_info(self, symbol: str) -> Dict:
         """Get basic stock information with improved error handling"""
         try:
             stock = yf.Ticker(symbol)
