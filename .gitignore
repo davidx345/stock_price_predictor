@@ -214,12 +214,14 @@ $RECYCLE.BIN/
 
 # Trained models (too large for git)
 models/*.h5
-models/*.keras
 models/*.pkl
 models/*.joblib
 models/*.pb
 models/checkpoint/
 models/saved_model/
+
+# Allow keras models for deployment (they're small enough)
+!models/*.keras
 
 # But keep the models directory structure
 !models/.gitkeep
