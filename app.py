@@ -94,14 +94,24 @@ def load_custom_css():
     .stButton > button:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }
-    .info-card {
+    }    .info-card {
         background: rgba(255, 255, 255, 0.95);
         backdrop-filter: blur(10px);
         padding: 1.5rem;
         border-radius: 12px;
         border: 1px solid rgba(255, 255, 255, 0.2);
         margin: 1rem 0;
+        color: #1a1a1a;
+    }
+    .info-card h4 {
+        color: #333333;
+        margin-bottom: 0.5rem;
+        font-weight: bold;
+    }
+    .info-card p {
+        color: #1a1a1a;
+        font-weight: 600;
+        font-size: 1.1rem;
     }
     </style>
     """, unsafe_allow_html=True)

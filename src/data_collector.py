@@ -17,8 +17,7 @@ class StockDataCollector:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        
-    def fetch_stock_data(self, symbol: str, period: str = "5y") -> Optional[pd.DataFrame]:
+          def fetch_stock_data(self, symbol: str, period: str = "5y") -> Optional[pd.DataFrame]:
         """
         Fetch stock data from Yahoo Finance
         
@@ -31,15 +30,47 @@ class StockDataCollector:
         """
         try:
             self.logger.info(f"Fetching data for {symbol} with period {period}")
-            stock = yf.Ticker(symbol)
-            data = stock.history(period=period)
             
-            if data.empty:
+            # Create ticker with retry logic
+            stock = yf.Ticker(symbol)
+            
+            # Try different approaches for data fetching
+            data = None
+            
+            # Method 1: Try with period
+            try:
+                data = stock.history(period=period, timeout=30)
+            except Exception as e1:
+                self.logger.warning(f"Period fetch failed for {symbol}: {e1}")
+                
+                # Method 2: Try with start/end dates
+                try:
+                    if period == "1y":
+                        start_date = datetime.now() - timedelta(days=365)
+                    elif period == "2y":
+                        start_date = datetime.now() - timedelta(days=730)
+                    elif period == "5y":
+                        start_date = datetime.now() - timedelta(days=1825)
+                    elif period == "10y":
+                        start_date = datetime.now() - timedelta(days=3650)
+                    else:
+                        start_date = datetime.now() - timedelta(days=1825)  # Default to 5y
+                    
+                    end_date = datetime.now()
+                    data = stock.history(start=start_date, end=end_date, timeout=30)
+                except Exception as e2:
+                    self.logger.error(f"Date fetch also failed for {symbol}: {e2}")
+            
+            if data is None or data.empty:
                 self.logger.error(f"No data found for symbol {symbol}")
                 return None
                 
             # Clean data
             data = data.dropna()
+            
+            if len(data) < 50:  # Minimum data requirement
+                self.logger.error(f"Insufficient data for {symbol}: only {len(data)} points")
+                return None
             
             # Add metadata
             data.attrs['symbol'] = symbol
@@ -52,22 +83,41 @@ class StockDataCollector:
         except Exception as e:
             self.logger.error(f"Error fetching data for {symbol}: {str(e)}")
             return None
-    
-    def get_stock_info(self, symbol: str) -> Dict:
-        """Get basic stock information"""
+      def get_stock_info(self, symbol: str) -> Dict:
+        """Get basic stock information with improved error handling"""
         try:
             stock = yf.Ticker(symbol)
+            
+            # Try to get info with timeout
             info = stock.info
+            
+            # Validate that we got actual data
+            if not info or len(info) < 5:
+                # Fallback to basic info
+                return {
+                    'name': symbol,
+                    'sector': 'Unknown',
+                    'market_cap': 0,
+                    'pe_ratio': 0,
+                    'dividend_yield': 0
+                }
+            
             return {
-                'name': info.get('longName', symbol),
+                'name': info.get('longName', info.get('shortName', symbol)),
                 'sector': info.get('sector', 'Unknown'),
                 'market_cap': info.get('marketCap', 0),
-                'pe_ratio': info.get('trailingPE', 0),
+                'pe_ratio': info.get('trailingPE', info.get('forwardPE', 0)),
                 'dividend_yield': info.get('dividendYield', 0)
             }
         except Exception as e:
             self.logger.error(f"Error getting info for {symbol}: {str(e)}")
-            return {'name': symbol, 'sector': 'Unknown'}
+            return {
+                'name': symbol,
+                'sector': 'Unknown', 
+                'market_cap': 0,
+                'pe_ratio': 0,
+                'dividend_yield': 0
+            }
 
 class FeatureEngineer:
     """Creates technical indicators and features for ML models"""
