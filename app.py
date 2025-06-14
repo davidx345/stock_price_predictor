@@ -24,14 +24,33 @@ st.set_page_config(
 # Add src to path
 sys.path.append(str(Path(__file__).parent / "src"))
 
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+
 try:
     from data_collector import StockDataCollector, FeatureEngineer
     from lstm_model import LSTMStockPredictor
     from visualizations import StockVisualizer
-    from utils import ModelManager, DataValidator, setup_logging
+    from utils import ModelManager, DataValidator
     from config import POPULAR_STOCKS, APP_CONFIG, MODEL_CONFIG, DATA_CONFIG
+    
+    # Try to setup additional logging if available
+    try:
+        from utils import setup_logging
+        setup_logging()
+    except (ImportError, AttributeError):
+        # If setup_logging is not available, basic logging is already configured above
+        logging.getLogger().info("Using basic logging configuration")
+        
 except ImportError as e:
     st.error(f"Import error: {e}")
+    logging.error(f"Import error: {e}")
     st.stop()
 
 # Initialize components
@@ -283,6 +302,11 @@ def load_and_display_data(components, symbol, period):
             
             if data is None:
                 st.error(f"❌ Could not fetch data for {symbol}. Please check the symbol and try again.")
+                st.info("💡 **Troubleshooting Tips:**")
+                st.info("• Try a different stock symbol (e.g., MSFT, GOOGL)")
+                st.info("• Check if the symbol is valid on Yahoo Finance")
+                st.info("• Try reducing the data period (e.g., 1y instead of max)")
+                logging.error(f"Failed to fetch data for symbol: {symbol}")
                 return None
             
             # Validate data

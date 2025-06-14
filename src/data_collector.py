@@ -17,9 +17,9 @@ class StockDataCollector:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-          def fetch_stock_data(self, symbol: str, period: str = "5y") -> Optional[pd.DataFrame]:
+      def fetch_stock_data(self, symbol: str, period: str = "5y") -> Optional[pd.DataFrame]:
         """
-        Fetch stock data from Yahoo Finance
+        Fetch stock data from Yahoo Finance with comprehensive error handling
         
         Args:
             symbol: Stock symbol (e.g., 'AAPL')
@@ -31,46 +31,101 @@ class StockDataCollector:
         try:
             self.logger.info(f"Fetching data for {symbol} with period {period}")
             
-            # Create ticker with retry logic
+            # Validate symbol format
+            symbol = symbol.upper().strip()
+            if not symbol or len(symbol) > 10:
+                self.logger.error(f"Invalid symbol format: {symbol}")
+                return None
+              # Create ticker with enhanced configuration
             stock = yf.Ticker(symbol)
-            
-            # Try different approaches for data fetching
             data = None
             
-            # Method 1: Try with period
+            # Method 1: Try with period (most reliable)
             try:
-                data = stock.history(period=period, timeout=30)
+                data = stock.history(
+                    period=period,
+                    interval="1d",
+                    auto_adjust=True,
+                    prepost=False,
+                    threads=True,
+                    proxy=None
+                )
+                self.logger.info(f"Method 1 successful for {symbol}")
             except Exception as e1:
-                self.logger.warning(f"Period fetch failed for {symbol}: {e1}")
+                self.logger.warning(f"Method 1 failed for {symbol}: {e1}")
                 
-                # Method 2: Try with start/end dates
+                # Method 2: Try with explicit date range
                 try:
-                    if period == "1y":
-                        start_date = datetime.now() - timedelta(days=365)
-                    elif period == "2y":
-                        start_date = datetime.now() - timedelta(days=730)
-                    elif period == "5y":
-                        start_date = datetime.now() - timedelta(days=1825)
-                    elif period == "10y":
-                        start_date = datetime.now() - timedelta(days=3650)
-                    else:
-                        start_date = datetime.now() - timedelta(days=1825)  # Default to 5y
-                    
                     end_date = datetime.now()
-                    data = stock.history(start=start_date, end=end_date, timeout=30)
+                    if period == "1y":
+                        start_date = end_date - timedelta(days=365)
+                    elif period == "2y":
+                        start_date = end_date - timedelta(days=730)
+                    elif period == "5y":
+                        start_date = end_date - timedelta(days=1825)
+                    elif period == "10y":
+                        start_date = end_date - timedelta(days=3650)
+                    elif period == "max":
+                        start_date = end_date - timedelta(days=7300)  # ~20 years
+                    else:
+                        start_date = end_date - timedelta(days=1825)  # Default 5y
+                    
+                    data = stock.history(
+                        start=start_date.strftime('%Y-%m-%d'),
+                        end=end_date.strftime('%Y-%m-%d'),
+                        auto_adjust=True,
+                        prepost=False
+                    )
+                    self.logger.info(f"Method 2 successful for {symbol}")
                 except Exception as e2:
-                    self.logger.error(f"Date fetch also failed for {symbol}: {e2}")
+                    self.logger.error(f"Method 2 also failed for {symbol}: {e2}")
+                      # Method 3: Try with download function
+                    try:
+                        data = yf.download(
+                            symbol,
+                            period=period,
+                            interval="1d",
+                            auto_adjust=True,
+                            prepost=False,
+                            threads=True,
+                            group_by='ticker',
+                            progress=False
+                        )
+                        
+                        # If multi-level columns, flatten them
+                        if hasattr(data.columns, 'levels'):
+                            data.columns = data.columns.droplevel(0)
+                        
+                        self.logger.info(f"Method 3 successful for {symbol}")
+                    except Exception as e3:
+                        self.logger.error(f"All methods failed for {symbol}: {e3}")
+                        return None
             
+            # Validate data
             if data is None or data.empty:
-                self.logger.error(f"No data found for symbol {symbol}")
+                self.logger.error(f"No data returned for symbol {symbol}")
                 return None
-                
-            # Clean data
+            
+            # Check required columns
+            required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+            missing_cols = [col for col in required_cols if col not in data.columns]
+            if missing_cols:
+                self.logger.error(f"Missing required columns for {symbol}: {missing_cols}")
+                return None
+            
+            # Clean and validate data
             data = data.dropna()
             
-            if len(data) < 50:  # Minimum data requirement
+            if len(data) < 30:  # Minimum data requirement
                 self.logger.error(f"Insufficient data for {symbol}: only {len(data)} points")
                 return None
+            
+            # Ensure numeric types
+            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                data[col] = pd.to_numeric(data[col], errors='coerce')
+            
+            # Remove any remaining NaN after conversion
+            data = data.dropna()
             
             # Add metadata
             data.attrs['symbol'] = symbol
