@@ -488,3 +488,113 @@ class FeatureEngineer:
         except Exception as e:
             self.logger.error(f"Error adding technical indicators: {str(e)}")
             return df
+
+class DataPreprocessor:
+    """
+    Preprocesses stock data for machine learning training
+    """
+    
+    def __init__(self, lookback_days: int = 60, forecast_days: int = 5):
+        """
+        Initialize data preprocessor
+        
+        Args:
+            lookback_days: Number of days to look back for features
+            forecast_days: Number of days to forecast
+        """
+        self.lookback_days = lookback_days
+        self.forecast_days = forecast_days
+        self.logger = logging.getLogger(__name__)
+        
+    def prepare_data_for_training(self, data: pd.DataFrame, feature_columns: list) -> dict:
+        """
+        Prepare data for LSTM training
+        
+        Args:
+            data: DataFrame with stock data and technical indicators
+            feature_columns: List of column names to use as features
+            
+        Returns:
+            Dictionary with X_train, X_test, y_train, y_test, scaler
+        """
+        try:
+            from sklearn.preprocessing import MinMaxScaler
+            from sklearn.model_selection import train_test_split
+            
+            # Select and clean features
+            available_columns = [col for col in feature_columns if col in data.columns]
+            self.logger.info(f"Using {len(available_columns)} features: {available_columns}")
+            
+            df = data[available_columns].copy()
+            df = df.dropna()
+            
+            if len(df) < self.lookback_days + self.forecast_days:
+                raise ValueError(f"Not enough data: {len(df)} rows, need at least {self.lookback_days + self.forecast_days}")
+            
+            # Scale the data
+            scaler = MinMaxScaler()
+            scaled_data = scaler.fit_transform(df)
+            
+            # Create sequences
+            X, y = [], []
+            for i in range(self.lookback_days, len(scaled_data) - self.forecast_days + 1):
+                X.append(scaled_data[i-self.lookback_days:i])
+                # Predict closing price (assuming it's the first column)
+                y.append(scaled_data[i:i+self.forecast_days, 0])
+            
+            X = np.array(X)
+            y = np.array(y)
+            
+            # Split data
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42, shuffle=False
+            )
+            
+            self.logger.info(f"Data prepared: X_train={X_train.shape}, y_train={y_train.shape}")
+            
+            return {
+                'X_train': X_train,
+                'X_test': X_test,
+                'y_train': y_train,
+                'y_test': y_test,
+                'scaler': scaler,
+                'feature_columns': available_columns
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing data for training: {str(e)}")
+            raise
+            
+    def prepare_data_for_prediction(self, data: pd.DataFrame, feature_columns: list, scaler) -> np.ndarray:
+        """
+        Prepare data for making predictions
+        
+        Args:
+            data: DataFrame with recent stock data
+            feature_columns: List of feature column names
+            scaler: Fitted scaler from training
+            
+        Returns:
+            Scaled data ready for prediction
+        """
+        try:
+            # Select and clean features
+            available_columns = [col for col in feature_columns if col in data.columns]
+            df = data[available_columns].copy()
+            df = df.dropna()
+            
+            if len(df) < self.lookback_days:
+                raise ValueError(f"Not enough data for prediction: {len(df)} rows, need {self.lookback_days}")
+            
+            # Take the last lookback_days rows
+            recent_data = df.tail(self.lookback_days)
+            
+            # Scale the data
+            scaled_data = scaler.transform(recent_data)
+            
+            # Reshape for LSTM input
+            return scaled_data.reshape(1, self.lookback_days, len(available_columns))
+            
+        except Exception as e:
+            self.logger.error(f"Error preparing data for prediction: {str(e)}")
+            raise
