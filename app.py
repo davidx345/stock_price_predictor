@@ -296,8 +296,7 @@ def display_stock_info(components, symbol):
 def load_and_display_data(components, symbol, period):
     """Load and display stock data with validation"""
     try:
-        with st.spinner(f"Loading data for {symbol}..."):
-            # Fetch data
+        with st.spinner(f"Loading data for {symbol}..."):            # Fetch data
             data = components['data_collector'].fetch_stock_data(symbol, period)
             
             if data is None:
@@ -308,6 +307,10 @@ def load_and_display_data(components, symbol, period):
                 st.info("• Try reducing the data period (e.g., 1y instead of max)")
                 logging.error(f"Failed to fetch data for symbol: {symbol}")
                 return None
+            
+            # Check if sample data is being used
+            if hasattr(data, 'attrs') and data.attrs.get('sample_data', False):
+                st.warning("⚠️ **Demo Mode**: Using sample data because Yahoo Finance is currently unavailable. This is for demonstration purposes only.")
             
             # Validate data
             validation = components['data_validator'].validate_stock_data(data, symbol)
