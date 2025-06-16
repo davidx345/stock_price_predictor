@@ -62,7 +62,7 @@ def initialize_components():
             'data_collector': StockDataCollector(),
             'feature_engineer': FeatureEngineer(),
             'visualizer': StockVisualizer(),
-            'model_manager': ModelManager(),
+            'model_manager': ModelManager("models"),
             'data_validator': DataValidator()
         }
         return components
@@ -383,8 +383,7 @@ def create_technical_analysis(components, data, symbol):
 
 def train_or_load_model(components, symbol, settings):
     """Train a new model or load existing one"""
-    try:
-        # Check for existing models
+    try:        # Check for existing models
         available_models = components['model_manager'].list_models(symbol)
         
         col1, col2 = st.columns([2, 1])
@@ -393,28 +392,28 @@ def train_or_load_model(components, symbol, settings):
             if available_models:
                 st.info(f"Found {len(available_models)} existing model(s) for {symbol}")
                 
-                # Display model options
-                model_options = ["Train New Model"] + [
-                    f"{model['name']} (Accuracy: {model['metrics'].get('directional_accuracy', 0):.2%})"
-                    for model in available_models[:3]  # Show top 3
+                # Display model options - only existing models
+                model_options = [
+                    f"{model['name']} (Created: {model['created']})"
+                    for model in available_models[:5]  # Show top 5
                 ]
                 
                 selected_option = st.selectbox(
-                    "Choose Model Option",
+                    "Choose Existing Model",
                     options=model_options,
-                    help="Select an existing model or train a new one"
+                    help="Select an existing trained model"
                 )
                 
-                if selected_option == "Train New Model":
-                    return train_new_model(components, symbol, settings)
-                else:
-                    # Load selected model
-                    model_index = model_options.index(selected_option) - 1
-                    selected_model = available_models[model_index]
-                    return load_existing_model(components, selected_model)
+                # Load selected model
+                model_index = model_options.index(selected_option)
+                selected_model = available_models[model_index]
+                return load_existing_model(components, selected_model)
             else:
-                st.info(f"No existing models found for {symbol}. Training new model...")
-                return train_new_model(components, symbol, settings)
+                st.warning(f"⚠️ No existing models found for {symbol}")
+                st.info("📝 **Available pre-trained models:**")
+                st.info("• AAPL, AMZN, GOOGL, MSFT, TSLA")
+                st.info("Please select one of the available symbols above.")
+                return None
         
         with col2:
             if st.button("🔄 Refresh Models", help="Refresh the list of available models"):
@@ -423,93 +422,6 @@ def train_or_load_model(components, symbol, settings):
     except Exception as e:
         st.error(f"Error managing models: {e}")
         return None
-
-def train_new_model(components, symbol, settings):
-    """Train a new model"""
-    try:
-        st.markdown(" Training New Model")
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        # Step 1: Data collection
-        status_text.text("📊 Collecting and preparing data...")
-        progress_bar.progress(20)
-        
-        data = components['data_collector'].fetch_stock_data(symbol, settings['period'])
-        if data is None:
-            raise ValueError("Failed to fetch data")
-        
-        # Step 2: Feature engineering
-        status_text.text(" Engineering features...")
-        progress_bar.progress(40)
-        
-        enhanced_data = components['feature_engineer'].add_technical_indicators(data)
-        
-        # Step 3: Model training
-        status_text.text(" Training LSTM model...")
-        progress_bar.progress(60)
-        
-        # Configure model
-        config = MODEL_CONFIG.__dict__.copy()
-        config['lookback_days'] = settings['lookback_days']
-        config['forecast_days'] = settings['forecast_days']
-        config['epochs'] = 50  # Reduced for web app
-        
-        model = LSTMStockPredictor(config)
-        
-        # Prepare data
-        from data_collector import DataPreprocessor
-        preprocessor = DataPreprocessor(
-            lookback_days=settings['lookback_days'],
-            forecast_days=settings['forecast_days']
-        )
-        
-        prepared_data = preprocessor.prepare_data_for_training(
-            enhanced_data, DATA_CONFIG.feature_columns
-        )
-        
-        # Train model
-        progress_bar.progress(80)
-        training_results = model.train(
-            X_train=prepared_data['X_train'],
-            y_train=prepared_data['y_train'],
-            X_val=prepared_data['X_test'],
-            y_val=prepared_data['y_test'],
-            use_attention=settings['use_attention']
-        )
-        
-        status_text.text("💾 Saving model...")
-        progress_bar.progress(100)
-        
-        # Save model
-        model_metadata = {
-            'symbol': symbol,
-            'training_results': training_results,
-            'config': config,
-            'trained_at': datetime.now().isoformat()
-        }
-        
-        model_dir = components['model_manager'].save_model_with_metadata(
-            model, symbol, model_metadata
-        )
-        
-        status_text.text("✅ Model training completed!")
-        
-        # Display training results
-        display_training_results(training_results)
-        
-        return {
-            'model': model,
-            'results': training_results,
-            'data': prepared_data,
-            'enhanced_data': enhanced_data
-        }
-        
-    except Exception as e:
-        st.error(f"Training failed: {e}")
-        return None
-
 def load_existing_model(components, model_info):
     """Load an existing model"""   
     try:
@@ -544,30 +456,6 @@ def load_existing_model(components, model_info):
     except Exception as e:
         st.error(f"Failed to load model: {e}")
         return None
-
-def display_training_results(results):
-    """Display training results"""
-    st.markdown("### 📈 Training Results")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    metrics = results.get('val_metrics', {})
-    
-    with col1:
-        accuracy = metrics.get('directional_accuracy', 0)
-        st.metric("🎯 Directional Accuracy", f"{accuracy:.2%}")
-    
-    with col2:
-        mae = metrics.get('mae', 0)
-        st.metric("📊 Mean Absolute Error", f"{mae:.4f}")
-    
-    with col3:
-        rmse = metrics.get('rmse', 0)
-        st.metric("📈 RMSE", f"{rmse:.4f}")
-    
-    with col4:
-        mse = metrics.get('mse', 0)
-        st.metric("📋 MSE", f"{mse:.4f}")
 
 def make_predictions(model_data, enhanced_data, symbol, settings, components):
     """Make and display predictions"""
