@@ -118,12 +118,12 @@ class ModelManager:
             return value.tolist()
         else:
             return value
-    
     def list_models(self, symbol: Optional[str] = None) -> List[Dict]:
         """List available models with their metadata"""
         try:
             models = []
             
+            # Check for directory-based models (new format)
             for model_dir in self.models_dir.iterdir():
                 if model_dir.is_dir():
                     metadata_path = model_dir / "metadata.json"
@@ -138,11 +138,45 @@ class ModelManager:
                             'symbol': metadata.get('symbol', 'unknown'),
                             'created': metadata.get('created', 'unknown'),
                             'metrics': metadata.get('val_metrics', {}),
-                            'size': self._get_directory_size(model_dir)
+                            'size': self._get_directory_size(model_dir),
+                            'type': 'directory'
                         }
                         
                         if symbol is None or model_info['symbol'] == symbol:
                             models.append(model_info)
+            
+            # Check for legacy .keras files (existing format)
+            for model_file in self.models_dir.glob("*.keras"):
+                # Parse symbol from filename (e.g., AAPL_lstm_20250612_191825.keras)
+                filename_parts = model_file.stem.split('_')
+                if len(filename_parts) >= 3:
+                    file_symbol = filename_parts[0]
+                    date_part = filename_parts[2] if len(filename_parts) >= 3 else 'unknown'
+                    time_part = filename_parts[3] if len(filename_parts) >= 4 else ''
+                    
+                    # Convert to readable date
+                    try:
+                        if len(date_part) == 8:
+                            created_date = f"{date_part[:4]}-{date_part[4:6]}-{date_part[6:8]}"
+                            if time_part and len(time_part) == 6:
+                                created_date += f" {time_part[:2]}:{time_part[2:4]}:{time_part[4:6]}"
+                        else:
+                            created_date = 'unknown'
+                    except:
+                        created_date = 'unknown'
+                    
+                    model_info = {
+                        'name': model_file.stem,
+                        'path': str(model_file),
+                        'symbol': file_symbol,
+                        'created': created_date,
+                        'metrics': {'note': 'Pre-trained model (no validation metrics available)'},
+                        'size': f"{model_file.stat().st_size / (1024*1024):.1f} MB",
+                        'type': 'file'
+                    }
+                    
+                    if symbol is None or model_info['symbol'] == symbol:
+                        models.append(model_info)
             
             # Sort by creation date (newest first)
             models.sort(key=lambda x: x['created'], reverse=True)

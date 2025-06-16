@@ -303,14 +303,14 @@ def load_and_display_data(components, symbol, period):
                 st.error(f"❌ Could not fetch data for {symbol}. Please check the symbol and try again.")
                 st.info("💡 **Troubleshooting Tips:**")
                 st.info("• Try a different stock symbol (e.g., MSFT, GOOGL)")
-                st.info("• Check if the symbol is valid on Yahoo Finance")
+                st.info("• Check if the symbol is valid on major exchanges (NYSE, NASDAQ)")
                 st.info("• Try reducing the data period (e.g., 1y instead of max)")
                 logging.error(f"Failed to fetch data for symbol: {symbol}")
                 return None
             
             # Check if sample data is being used
             if hasattr(data, 'attrs') and data.attrs.get('sample_data', False):
-                st.warning("⚠️ **Demo Mode**: Using sample data because Yahoo Finance is currently unavailable. This is for demonstration purposes only.")
+                st.warning("⚠️ **Demo Mode**: Using sample data because external API data sources are currently unavailable. This is for demonstration purposes only.")
             
             # Validate data
             validation = components['data_validator'].validate_stock_data(data, symbol)
@@ -427,7 +427,7 @@ def train_or_load_model(components, symbol, settings):
 def train_new_model(components, symbol, settings):
     """Train a new model"""
     try:
-        st.markdown("### 🧠 Training New Model")
+        st.markdown(" Training New Model")
         
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -441,13 +441,13 @@ def train_new_model(components, symbol, settings):
             raise ValueError("Failed to fetch data")
         
         # Step 2: Feature engineering
-        status_text.text("🔧 Engineering features...")
+        status_text.text(" Engineering features...")
         progress_bar.progress(40)
         
         enhanced_data = components['feature_engineer'].add_technical_indicators(data)
         
         # Step 3: Model training
-        status_text.text("🚀 Training LSTM model...")
+        status_text.text(" Training LSTM model...")
         progress_bar.progress(60)
         
         # Configure model
@@ -511,11 +511,18 @@ def train_new_model(components, symbol, settings):
         return None
 
 def load_existing_model(components, model_info):
-    """Load an existing model"""
+    """Load an existing model"""   
     try:
         st.info(f"Loading model: {model_info['name']}")
         
-        model_path = Path(model_info['path']) / "model.h5"
+        # Handle both directory-based models and individual .keras files
+        if model_info.get('type') == 'file':
+            # Legacy .keras file
+            model_path = model_info['path']
+        else:
+            # Directory-based model
+            model_path = Path(model_info['path']) / "model.h5"
+        
         model = LSTMStockPredictor.load_model(str(model_path))
         
         # Display model info
@@ -729,7 +736,7 @@ def main():
             - **Model Type**: Advanced LSTM with technical indicators
             - **Features Used**: Price data, volume, RSI, MACD, Bollinger Bands, and more
             - **Prediction Horizon**: Configurable (1-30 days)
-            - **Update Frequency**: Real-time data from Yahoo Finance
+            - **Update Frequency**: Real-time data from multiple financial APIs
             
             ### ⚠️ Disclaimer
             This is a demonstration application for educational purposes. 
