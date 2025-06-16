@@ -365,25 +365,112 @@ class LSTMStockPredictor:
             self.logger.error(f"Error saving model: {str(e)}")
             raise
     
-    @classmethod
+    @classmethod    @classmethod
     def load_model(cls, filepath: str):
-        """Load a trained model"""
+        """Load a trained model with compatibility for different formats"""
         try:
-            # Load configuration
-            config_path = filepath.replace('.h5', '_config.pkl')
-            config = joblib.load(config_path)
+            logger = logging.getLogger(__name__)
+            logger.info(f"Attempting to load model from: {filepath}")
             
-            # Create instance
-            instance = cls(config)
+            # Handle different file formats
+            if filepath.endswith('.keras'):
+                # New format - try to load directly
+                try:
+                    # Create a basic configuration for legacy models
+                    default_config = {
+                        'lookback_days': 60,
+                        'forecast_days': 5,
+                        'lstm_units': [100, 50, 25],
+                        'dropout_rate': 0.2,
+                        'learning_rate': 0.001,
+                        'batch_size': 32,
+                        'epochs': 100
+                    }
+                    
+                    # Create instance with default config
+                    instance = cls(default_config)
+                    
+                    # Try different loading methods for compatibility
+                    try:
+                        # Method 1: Load with compile=False for better compatibility
+                        instance.model = tf.keras.models.load_model(filepath, compile=False)
+                        logger.info(f"Model loaded successfully with compile=False from {filepath}")
+                    except Exception as e1:
+                        logger.warning(f"Failed with compile=False: {e1}")
+                        try:
+                            # Method 2: Standard loading
+                            instance.model = tf.keras.models.load_model(filepath)
+                            logger.info(f"Model loaded successfully with standard method from {filepath}")
+                        except Exception as e2:
+                            logger.warning(f"Failed with standard loading: {e2}")
+                            # Method 3: Load weights only if possible
+                            raise Exception(f"Could not load model: {e2}")
+                    
+                    return instance
+                    
+                except Exception as e:
+                    logger.error(f"Failed to load .keras model: {e}")
+                    raise
+                    
+            elif filepath.endswith('.h5'):
+                # Legacy format with config file
+                config_path = filepath.replace('.h5', '_config.pkl')
+                if Path(config_path).exists():
+                    config = joblib.load(config_path)
+                else:
+                    # Use default config if no config file
+                    config = {
+                        'lookback_days': 60,
+                        'forecast_days': 5,
+                        'lstm_units': [100, 50, 25],
+                        'dropout_rate': 0.2,
+                        'learning_rate': 0.001,
+                        'batch_size': 32,
+                        'epochs': 100
+                    }
+                
+                # Create instance
+                instance = cls(config)
+                
+                # Load model
+                instance.model = tf.keras.models.load_model(filepath)
+                logger.info(f"Legacy model loaded from {filepath}")
+                return instance
             
-            # Load model
-            instance.model = tf.keras.models.load_model(filepath)
-            
-            logging.getLogger(__name__).info(f"Model loaded from {filepath}")
-            return instance
-            
+            else:
+                raise ValueError(f"Unsupported file format: {filepath}")
+                
         except Exception as e:
-            logging.getLogger(__name__).error(f"Error loading model: {str(e)}")
+            logger.error(f"Error loading model from {filepath}: {str(e)}")
+            raise
+    
+    def recompile_model(self):
+        """Recompile model if it was loaded without compilation"""
+        if self.model is not None:
+            try:
+                self.model.compile(
+                    optimizer=Adam(learning_rate=self.learning_rate),
+                    loss='mse',
+                    metrics=['mae']
+                )
+                self.logger.info("Model recompiled successfully")
+            except Exception as e:
+                self.logger.warning(f"Could not recompile model: {e}")
+    
+    def predict(self, data: np.ndarray) -> np.ndarray:
+        """Make predictions using the loaded model"""
+        if self.model is None:
+            raise ValueError("Model not loaded")
+        
+        try:
+            # Ensure model is compiled for prediction
+            if not hasattr(self.model, 'optimizer') or self.model.optimizer is None:
+                self.recompile_model()
+            
+            predictions = self.model.predict(data)
+            return predictions
+        except Exception as e:
+            self.logger.error(f"Prediction failed: {e}")
             raise
     
     def plot_training_history(self) -> plt.Figure:
