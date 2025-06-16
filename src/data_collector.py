@@ -1,6 +1,6 @@
 """
 Data collection and processing utilities for stock price prediction.
-Uses multiple reliable data sources (no Yahoo Finance dependency).
+Uses multiple reliable data sources with API keys from environment variables.
 """
 import pandas as pd
 import numpy as np
@@ -13,15 +13,26 @@ import requests
 import json
 import time
 import traceback
+import os
 from io import StringIO
 
 warnings.filterwarnings('ignore')
 
 class StockDataCollector:
-    """Handles stock data collection from multiple reliable sources"""
+    """Handles stock data collection from multiple reliable sources with API keys"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        
+        # Get API keys from environment variables
+        self.alpha_vantage_key = os.getenv('ALPHA_VANTAGE_API_KEY', 'demo')
+        self.twelve_data_key = os.getenv('TWELVE_DATA_API_KEY', '')
+        self.fmp_key = os.getenv('FMP_API_KEY', '')
+        
+        # Log which API keys are available
+        self.logger.info(f"Alpha Vantage API: {'✅ Available' if self.alpha_vantage_key != 'demo' else '⚠️  Using demo key'}")
+        self.logger.info(f"Twelve Data API: {'✅ Available' if self.twelve_data_key else '❌ No key'}")
+        self.logger.info(f"FMP API: {'✅ Available' if self.fmp_key else '❌ No key'}")
         
     def fetch_stock_data(self, symbol: str, period: str = "5y") -> Optional[pd.DataFrame]:
         """
@@ -123,8 +134,7 @@ class StockDataCollector:
             data = data.dropna()
             
             self.logger.info(f"VALIDATION SUCCESS: {symbol} - {len(data)} clean records")
-            
-            # Add metadata
+              # Add metadata
             data.attrs['symbol'] = symbol
             data.attrs['period'] = period
             data.attrs['last_update'] = datetime.now()
@@ -137,25 +147,37 @@ class StockDataCollector:
             import traceback
             self.logger.error(f"TRACEBACK: {traceback.format_exc()}")
             return None
-
+    
     def _fetch_alpha_vantage(self, symbol: str, period: str) -> Optional[pd.DataFrame]:
         """
-        Fetch data from Alpha Vantage (free tier: 5 calls/min, 500/day)
+        Fetch data from Alpha Vantage with API key
         """
         try:
-            # Alpha Vantage free API (no key needed for demo)
+            if self.alpha_vantage_key == 'demo':
+                self.logger.warning("Using Alpha Vantage demo key - limited to MSFT, IBM, etc.")
+            
             url = "https://www.alphavantage.co/query"
             params = {
                 "function": "TIME_SERIES_DAILY",
                 "symbol": symbol,
                 "outputsize": "full" if period in ["5y", "10y", "max"] else "compact",
                 "datatype": "json",
-                "apikey": "demo"  # Demo key for testing
+                "apikey": self.alpha_vantage_key
             }
             
+            self.logger.info(f"Alpha Vantage API call for {symbol}")
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             data_json = response.json()
+            
+            # Check for API limit errors
+            if "Error Message" in data_json:
+                self.logger.error(f"Alpha Vantage Error: {data_json['Error Message']}")
+                return None
+            
+            if "Note" in data_json:
+                self.logger.error(f"Alpha Vantage Rate Limit: {data_json['Note']}")
+                return None
             
             if "Time Series (Daily)" in data_json:
                 ts_data = data_json["Time Series (Daily)"]
@@ -173,36 +195,46 @@ class StockDataCollector:
                     })
                 
                 df = pd.DataFrame(df_data).set_index('Date').sort_index()
-                
-                # Filter by period
+                  # Filter by period
                 df = self._filter_by_period(df, period)
                 
+                self.logger.info(f"Alpha Vantage SUCCESS: {len(df)} records for {symbol}")
                 return df
             else:
-                self.logger.error(f"Alpha Vantage API error: {data_json}")
+                self.logger.error(f"Alpha Vantage unexpected response: {list(data_json.keys())}")
                 return None
                 
         except Exception as e:
-            self.logger.error(f"Alpha Vantage error: {e}")
+            self.logger.error(f"Alpha Vantage error: {type(e).__name__}: {str(e)}")
             return None
-
+            
     def _fetch_twelve_data(self, symbol: str, period: str) -> Optional[pd.DataFrame]:
         """
-        Fetch data from Twelve Data (free tier: 8 calls/min, 800/day)
+        Fetch data from Twelve Data with API key
         """
         try:
-            # Twelve Data free API
+            if not self.twelve_data_key:
+                self.logger.warning("No Twelve Data API key - skipping")
+                return None
+            
             url = "https://api.twelvedata.com/time_series"
             params = {
                 "symbol": symbol,
                 "interval": "1day",
-                "outputsize": "5000",  # Max for free tier
-                "format": "json"
+                "outputsize": "5000",
+                "format": "json",
+                "apikey": self.twelve_data_key
             }
             
+            self.logger.info(f"Twelve Data API call for {symbol}")
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             data_json = response.json()
+            
+            # Check for errors
+            if "status" in data_json and data_json["status"] == "error":
+                self.logger.error(f"Twelve Data Error: {data_json.get('message', 'Unknown error')}")
+                return None
             
             if "values" in data_json and data_json["values"]:
                 # Convert to DataFrame
@@ -222,13 +254,14 @@ class StockDataCollector:
                 # Filter by period
                 df = self._filter_by_period(df, period)
                 
+                self.logger.info(f"Twelve Data SUCCESS: {len(df)} records for {symbol}")
                 return df
             else:
-                self.logger.error(f"Twelve Data API error: {data_json}")
+                self.logger.error(f"Twelve Data unexpected response: {list(data_json.keys())}")
                 return None
                 
         except Exception as e:
-            self.logger.error(f"Twelve Data error: {e}")
+            self.logger.error(f"Twelve Data error: {type(e).__name__}: {str(e)}")
             return None
 
     def _fetch_fmp_data(self, symbol: str, period: str) -> Optional[pd.DataFrame]:
