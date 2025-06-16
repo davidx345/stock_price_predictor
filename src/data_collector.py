@@ -17,6 +17,7 @@ class StockDataCollector:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        
     def fetch_stock_data(self, symbol: str, period: str = "5y") -> Optional[pd.DataFrame]:
         """
         Fetch stock data from Yahoo Finance with comprehensive error handling
@@ -35,8 +36,8 @@ class StockDataCollector:
             symbol = symbol.upper().strip()
             if not symbol or len(symbol) > 10:
                 self.logger.error(f"Invalid symbol format: {symbol}")
-                return None
-              # Create ticker with enhanced configuration
+                return None            
+            # Create ticker with enhanced configuration
             stock = yf.Ticker(symbol)
             data = None
             
@@ -125,8 +126,7 @@ class StockDataCollector:
                 data[col] = pd.to_numeric(data[col], errors='coerce')
             
             # Remove any remaining NaN after conversion
-            data = data.dropna()
-            
+            data = data.dropna()            
             # Add metadata
             data.attrs['symbol'] = symbol
             data.attrs['period'] = period
@@ -138,6 +138,7 @@ class StockDataCollector:
         except Exception as e:
             self.logger.error(f"Error fetching data for {symbol}: {str(e)}")
             return None
+
     def get_stock_info(self, symbol: str) -> Dict:
         """Get basic stock information with improved error handling"""
         try:
