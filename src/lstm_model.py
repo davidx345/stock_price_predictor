@@ -353,10 +353,10 @@ class LSTMStockPredictor:
         """Save the trained model"""
         if self.model is None:
             raise ValueError("No model to save. Train the model first.")
-          try:
-            # Save model
+        try:
+            # Save model 
             self.model.save(filepath)
-            
+             
             # Save configuration
             config_path = filepath.replace('.h5', '_config.pkl')
             joblib.dump(self.config, config_path)
