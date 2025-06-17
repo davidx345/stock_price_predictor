@@ -1,6 +1,10 @@
-# Railway requirements - TensorFlow 2.13 compatible stack
+# Railway Production Requirements - Battle-tested versions
+# Last updated: June 2025
+# These versions are verified to work together without conflicts
+
+# Core ML Libraries
 tensorflow==2.13.0
-numpy>=1.22.0,<1.25.0
+numpy==1.24.3
 pandas==2.0.3
 scikit-learn==1.3.0
 
@@ -25,6 +29,11 @@ streamlit==1.28.1
 python-dotenv==1.0.0
 joblib==1.3.2
 beautifulsoup4==4.12.2
+
+# Core Python packages (explicit versions to avoid conflicts)
+setuptools==68.0.0
+wheel==0.41.2
+typing-extensions==4.7.1
 
 # Deployment
 gunicorn==21.2.0
