@@ -53,6 +53,37 @@ except ImportError as e:
     logging.error(f"Import error: {e}")
     st.stop()
 
+# Add model compatibility fix for TensorFlow version issues
+def fix_model_compatibility():
+    """Fix TensorFlow model compatibility issues"""
+    import tensorflow as tf
+    import os
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Reduce TensorFlow logging
+    
+    # Monkey patch for batch_shape compatibility
+    original_deserialize = tf.keras.utils.deserialize_keras_object
+    
+    def patched_deserialize(identifier, module_objects=None, custom_objects=None, printable_module_name='object'):
+        try:
+            return original_deserialize(identifier, module_objects, custom_objects, printable_module_name)
+        except Exception as e:
+            if "batch_shape" in str(e) and isinstance(identifier, dict):
+                # Fix batch_shape issue
+                if 'config' in identifier and 'batch_shape' in identifier['config']:
+                    batch_shape = identifier['config']['batch_shape']
+                    if batch_shape and len(batch_shape) > 1:
+                        identifier['config']['input_shape'] = batch_shape[1:]
+                        del identifier['config']['batch_shape']
+                        logging.info("Fixed batch_shape compatibility issue")
+                        return original_deserialize(identifier, module_objects, custom_objects, printable_module_name)
+            raise e
+    
+    tf.keras.utils.deserialize_keras_object = patched_deserialize
+    logging.info("Applied TensorFlow compatibility patches")
+
+# Apply compatibility fix
+fix_model_compatibility()
+
 # Initialize components
 @st.cache_resource
 def initialize_components():

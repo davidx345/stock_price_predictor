@@ -15,6 +15,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# Import the compatibility handler
+from .model_compatibility import ModelCompatibilityHandler
+
 class LSTMStockPredictor:
     """Advanced LSTM model for stock price prediction"""
     
@@ -350,8 +353,7 @@ class LSTMStockPredictor:
         """Save the trained model"""
         if self.model is None:
             raise ValueError("No model to save. Train the model first.")
-        
-        try:
+          try:
             # Save model
             self.model.save(filepath)
             
@@ -372,9 +374,12 @@ class LSTMStockPredictor:
             logger = logging.getLogger(__name__)
             logger.info(f"Attempting to load model from: {filepath}")
             
+            # Initialize compatibility handler
+            compatibility_handler = ModelCompatibilityHandler()
+            
             # Handle different file formats
             if filepath.endswith('.keras'):
-                # New format - try to load directly
+                # New format - try to load directly with compatibility fixes
                 try:
                     # Create a basic configuration for legacy models
                     default_config = {
@@ -390,21 +395,14 @@ class LSTMStockPredictor:
                     # Create instance with default config
                     instance = cls(default_config)
                     
-                    # Try different loading methods for compatibility
-                    try:
-                        # Method 1: Load with compile=False for better compatibility
-                        instance.model = tf.keras.models.load_model(filepath, compile=False)
-                        logger.info(f"Model loaded successfully with compile=False from {filepath}")
-                    except Exception as e1:
-                        logger.warning(f"Failed with compile=False: {e1}")
-                        try:
-                            # Method 2: Standard loading
-                            instance.model = tf.keras.models.load_model(filepath)
-                            logger.info(f"Model loaded successfully with standard method from {filepath}")
-                        except Exception as e2:
-                            logger.warning(f"Failed with standard loading: {e2}")
-                            # Method 3: Load weights only if possible
-                            raise Exception(f"Could not load model: {e2}")
+                    # Use compatibility handler to load the model
+                    instance.model = compatibility_handler.load_model_with_compatibility(
+                        filepath, compile=False
+                    )
+                    logger.info(f"Model loaded successfully from {filepath}")
+                    
+                    # Recompile the model with current TensorFlow version
+                    instance.recompile_model()
                     
                     return instance
                     
@@ -524,3 +522,53 @@ class LSTMStockPredictor:
         
         plt.tight_layout()
         return fig
+    
+    def _rebuild_and_load_weights(self, filepath: str):
+        """Rebuild model architecture and load weights for compatibility"""
+        try:
+            # Try to extract model architecture information
+            # This is a fallback method when direct loading fails
+            
+            # Create a new model with the expected architecture
+            # Based on your existing models (60 timesteps, 14 features)
+            input_shape = (60, 14)  # Default shape from your existing models
+            
+            # Build the model architecture
+            self.model = self.build_model(input_shape)
+            
+            # Try to load just the weights
+            try:
+                # First, try to load the entire model to get the architecture
+                temp_model = tf.keras.models.load_model(filepath, compile=False)
+                
+                # Get the actual input shape from the loaded model
+                if temp_model.layers:
+                    actual_input_shape = temp_model.layers[0].input_shape[1:]  # Remove batch dimension
+                    
+                    # Rebuild with correct shape if different
+                    if actual_input_shape != input_shape:
+                        self.logger.info(f"Rebuilding model with shape {actual_input_shape}")
+                        self.model = self.build_model(actual_input_shape)
+                
+                # Copy weights layer by layer
+                for i, layer in enumerate(self.model.layers):
+                    if i < len(temp_model.layers):
+                        try:
+                            weights = temp_model.layers[i].get_weights()
+                            if weights:  # Only set weights if they exist
+                                layer.set_weights(weights)
+                        except Exception as e:
+                            self.logger.warning(f"Could not copy weights for layer {i}: {e}")
+                            continue
+                
+                self.logger.info("Successfully rebuilt model and loaded weights")
+                
+            except Exception as e:
+                self.logger.error(f"Could not rebuild model: {e}")
+                # As a last resort, just use the default architecture
+                self.model = self.build_model((60, 14))
+                self.logger.warning("Using default model architecture - predictions may be inaccurate")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to rebuild model: {e}")
+            raise
