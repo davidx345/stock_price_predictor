@@ -16,7 +16,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Import the compatibility handler
-from .model_compatibility import ModelCompatibilityHandler
+try:
+    from .model_compatibility import ModelCompatibilityHandler
+except ImportError:
+    from model_compatibility import ModelCompatibilityHandler
 
 class LSTMStockPredictor:
     """Advanced LSTM model for stock price prediction"""

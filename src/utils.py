@@ -209,14 +209,16 @@ class ModelManager:
             
             if not models:
                 raise ValueError(f"No models found for symbol {symbol}")
-            
-            # Find model with best directional accuracy
+              # Find model with best directional accuracy
             best_model = max(models, 
                            key=lambda x: x['metrics'].get('directional_accuracy', 0))
             
             model_path = Path(best_model['path']) / "model.h5"
             
-            from .lstm_model import LSTMStockPredictor
+            try:
+                from .lstm_model import LSTMStockPredictor
+            except ImportError:
+                from lstm_model import LSTMStockPredictor
             model = LSTMStockPredictor.load_model(str(model_path))
             
             self.logger.info(f"Loaded best model for {symbol}: {best_model['name']}")

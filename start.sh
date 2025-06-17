@@ -7,7 +7,7 @@ echo "Starting Stock Price Predictor on Railway..."
 mkdir -p models logs data
 
 # Set Python path
-export PYTHONPATH="${PYTHONPATH}:./src"
+export PYTHONPATH="${PYTHONPATH}:${PWD}/src:${PWD}"
 
 # Set Streamlit configuration
 export STREAMLIT_SERVER_HEADLESS=true
