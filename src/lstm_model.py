@@ -365,7 +365,7 @@ class LSTMStockPredictor:
             self.logger.error(f"Error saving model: {str(e)}")
             raise
     
-    @classmethod    @classmethod
+    @classmethod
     def load_model(cls, filepath: str):
         """Load a trained model with compatibility for different formats"""
         try:
