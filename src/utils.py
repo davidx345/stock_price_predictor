@@ -3,13 +3,18 @@ Utility functions and helper classes for the stock prediction system.
 """
 import logging
 import os
-import joblib
 import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
+
+# Optional imports with fallbacks
+try:
+    import joblib
+except ImportError:
+    joblib = None
 
 def setup_logging(log_level: str = "INFO", log_file: Optional[str] = None) -> logging.Logger:
     """
@@ -302,10 +307,10 @@ class DataValidator:
                         else:
                             # Default to 0 for unknown indicators
                             fixed_data[col] = 0
-            
-            # Fill NaN values for all indicators
+              # Fill NaN values for all indicators
             for col in required_columns:
-                if col in fixed_data.columns:                    # Forward fill, then backward fill, then fill remaining with appropriate defaults
+                if col in fixed_data.columns:
+                    # Forward fill, then backward fill, then fill remaining with appropriate defaults
                     fixed_data[col] = fixed_data[col].ffill().bfill()
                     
                     # Fill remaining NaN with appropriate defaults
@@ -337,7 +342,9 @@ class DataValidator:
             self.logger.error(f"Data validation error for {symbol}: {str(e)}")
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
-            return data  # Return original data if validation fails    def validate_stock_data(self, data: pd.DataFrame, symbol: str = "Unknown") -> Dict:
+            return data  # Return original data if validation fails
+
+    def validate_stock_data(self, data: pd.DataFrame, symbol: str = "Unknown") -> Dict:
         """
         Validate stock data and return validation results (for app.py compatibility)
         
