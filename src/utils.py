@@ -340,6 +340,72 @@ class DataValidator:
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return data  # Return original data if validation fails
 
+    def validate_stock_data(self, data: pd.DataFrame, symbol: str = "Unknown") -> Dict:
+        """
+        Validate stock data and return validation results (for app.py compatibility)
+        
+        Args:
+            data: DataFrame with stock data
+            symbol: Stock symbol for logging
+            
+        Returns:
+            Dictionary with validation results
+        """
+        try:
+            self.logger.info(f"Validating stock data for {symbol}")
+            
+            issues = []
+            
+            # Check basic requirements
+            if data is None or data.empty:
+                issues.append("No data available")
+                return {'valid': False, 'issues': issues}
+            
+            # Check required columns
+            required_basic_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+            missing_basic = [col for col in required_basic_columns if col not in data.columns]
+            if missing_basic:
+                issues.append(f"Missing basic columns: {missing_basic}")
+            
+            # Check data quality
+            if len(data) < 30:
+                issues.append(f"Insufficient data: only {len(data)} records")
+            
+            # Check for excessive missing values
+            for col in required_basic_columns:
+                if col in data.columns:
+                    null_pct = data[col].isnull().sum() / len(data) * 100
+                    if null_pct > 50:
+                        issues.append(f"High missing values in {col}: {null_pct:.1f}%")
+            
+            # Check for technical indicators
+            technical_indicators = ['SMA_20', 'EMA_12', 'RSI', 'MACD', 'MACD_signal', 
+                                  'BB_upper', 'BB_lower', 'volatility', 'price_change']
+            missing_indicators = [col for col in technical_indicators if col not in data.columns]
+            if missing_indicators:
+                issues.append(f"Missing technical indicators: {len(missing_indicators)} indicators need calculation")
+            
+            # Determine if data is valid
+            is_valid = len(issues) == 0 or all('Missing technical indicators' in issue for issue in issues)
+            
+            self.logger.info(f"Data validation for {symbol}: {'Valid' if is_valid else 'Has issues'}")
+            
+            return {
+                'valid': is_valid,
+                'issues': issues,
+                'data_shape': data.shape,
+                'available_columns': data.columns.tolist()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Stock data validation error for {symbol}: {str(e)}")
+            return {
+                'valid': False, 
+                'issues': [f"Validation error: {str(e)}"],
+                'data_shape': (0, 0),
+                'available_columns': []
+            }
+
 class PerformanceTracker:
     """Track and analyze model performance over time"""
     

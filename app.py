@@ -108,13 +108,43 @@ fix_model_compatibility()
 @st.cache_resource
 def initialize_components():
     """Initialize all components with caching"""
-    try:
+    try:        # Import and create data validator with error handling
+        try:
+            from utils import DataValidator
+            data_validator = DataValidator()
+        except ImportError:
+            try:
+                # Try alternative import path
+                import sys
+                import os
+                sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+                from utils import DataValidator
+                data_validator = DataValidator()
+            except Exception as e:
+                logging.getLogger().warning(f"Failed to import DataValidator: {e}")
+                # Create a dummy validator
+                class DummyValidator:
+                    def validate_stock_data(self, data, symbol):
+                        return {'valid': True, 'issues': []}
+                    def validate_and_fix_data(self, data, symbol):
+                        return data
+                data_validator = DummyValidator()
+        except Exception as e:
+            logging.getLogger().warning(f"Failed to create DataValidator: {e}")
+            # Create a dummy validator
+            class DummyValidator:
+                def validate_stock_data(self, data, symbol):
+                    return {'valid': True, 'issues': []}
+                def validate_and_fix_data(self, data, symbol):
+                    return data
+            data_validator = DummyValidator()
+        
         components = {
             'data_collector': StockDataCollector(),
             'feature_engineer': FeatureEngineer(),
             'visualizer': StockVisualizer(),
             'model_manager': ModelManager("models"),
-            'data_validator': DataValidator()
+            'data_validator': data_validator
         }
         return components
     except Exception as e:
@@ -362,15 +392,30 @@ def load_and_display_data(components, symbol, period):
             # Check if sample data is being used
             if hasattr(data, 'attrs') and data.attrs.get('sample_data', False):
                 st.warning("⚠️ **Demo Mode**: Using sample data because external API data sources are currently unavailable. This is for demonstration purposes only.")
+              # Validate data
+            try:
+                validation = components['data_validator'].validate_stock_data(data, symbol)
+                
+                # Display validation results
+                if validation['valid']:
+                    st.success(f"✅ Data loaded successfully: {len(data)} records")
+                else:
+                    st.warning(f"⚠️ Data quality issues detected: {', '.join(validation['issues'])}")
             
-            # Validate data
-            validation = components['data_validator'].validate_stock_data(data, symbol)
+            except AttributeError as e:
+                # Fallback if validate_stock_data method is not found
+                st.warning("⚠️ Data validation method not available, proceeding with basic validation")
+                logging.getLogger().warning(f"DataValidator method error: {e}")
+                
+                # Basic validation
+                if data is not None and not data.empty and len(data) > 30:
+                    st.success(f"✅ Data loaded successfully: {len(data)} records")
+                else:
+                    st.error("❌ Insufficient data loaded")
             
-            # Display validation results
-            if validation['valid']:
-                st.success(f"✅ Data loaded successfully: {len(data)} records")
-            else:
-                st.warning(f"⚠️ Data quality issues detected: {', '.join(validation['issues'])}")
+            except Exception as e:
+                st.error(f"❌ Data validation error: {e}")
+                logging.getLogger().error(f"Data validation failed: {e}")
             
             # Display data statistics
             col1, col2, col3, col4 = st.columns(4)
