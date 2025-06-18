@@ -189,9 +189,23 @@ class StockVisualizer:
                     line=dict(color=self.colors['actual'], width=2)
                 )
             )
+              # Predictions
+            pred_dates = predictions['dates']
             
-            # Predictions
-            pred_dates = pd.to_datetime(predictions['dates'])
+            # Ensure pred_dates is a proper datetime series
+            if not isinstance(pred_dates, pd.DatetimeIndex):
+                try:
+                    pred_dates = pd.to_datetime(pred_dates)
+                except Exception as e:
+                    self.logger.warning(f"Could not convert prediction dates: {e}")
+                    # Fallback: generate dates from last historical date
+                    last_date = historical_data.index[-1]
+                    pred_dates = pd.date_range(
+                        start=last_date + pd.Timedelta(days=1),
+                        periods=len(predictions['predictions']),
+                        freq='D'
+                    )
+            
             pred_prices = predictions['predictions']
             
             # Connect last historical point to first prediction
@@ -248,18 +262,21 @@ class StockVisualizer:
                         fillcolor='rgba(255,107,107,0.2)',
                         showlegend=False
                     )
-                )
-              # Add vertical line to separate historical and predicted data
+                )            # Add vertical line to separate historical and predicted data
             try:
-                # Convert timestamp to string to avoid pandas timestamp arithmetic issues
+                # Use the last date from historical data
                 last_date = historical_data.index[-1]
-                if hasattr(last_date, 'strftime'):
+                
+                # Convert to a format that Plotly can handle reliably
+                if hasattr(last_date, 'isoformat'):
+                    last_date_str = last_date.isoformat()
+                elif hasattr(last_date, 'strftime'):
                     last_date_str = last_date.strftime('%Y-%m-%d')
                 else:
                     last_date_str = str(last_date)
                 
                 fig.add_vline(
-                    x=last_date,
+                    x=last_date_str,
                     line_dash="dash",
                     line_color="gray",
                     annotation_text="Prediction Start"

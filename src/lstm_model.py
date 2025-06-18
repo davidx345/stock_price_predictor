@@ -325,12 +325,19 @@ class LSTMStockPredictor:
             pred_normalized = self.model.predict(X, verbose=0)[0]
             
             # Inverse transform predictions
-            pred_prices = scaler.inverse_transform(pred_normalized.reshape(-1, 1)).flatten()
-            
-            # Generate prediction dates (assuming daily predictions)
+            pred_prices = scaler.inverse_transform(pred_normalized.reshape(-1, 1)).flatten()            # Generate prediction dates (assuming daily predictions)
             from datetime import datetime, timedelta
+            import pandas as pd
+            
+            # Use today's date as base to ensure we get business days
             base_date = datetime.now().date()
-            pred_dates = [base_date + timedelta(days=i+1) for i in range(len(pred_prices))]
+            
+            # Generate dates using pandas to ensure compatibility
+            pred_dates = pd.date_range(
+                start=base_date + timedelta(days=1), 
+                periods=len(pred_prices), 
+                freq='D'
+            ).date.tolist()  # Convert to date objects to avoid timestamp issues
             
             return {
                 'predictions': pred_prices.tolist(),

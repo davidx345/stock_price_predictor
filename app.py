@@ -622,7 +622,15 @@ def load_existing_model(components, model_info):
         with col3:
             st.metric("📅 Created", model_info.get('created', 'Unknown')[:10])
         
-        return {'model': model, 'model_info': model_info}
+        return {
+            'model': model, 
+            'model_info': model_info,
+            'results': {
+                'history': {},  # No training history available for loaded models
+                'train_metrics': model_info.get('metrics', {}),
+                'val_metrics': {}
+            }
+        }
         
     except Exception as e:
         st.error(f"Failed to load model: {e}")
@@ -815,8 +823,7 @@ def main():
         # Make predictions
         st.markdown("---")
         make_predictions(model_data, enhanced_data, settings['symbol'], settings, components)
-        
-        # Additional features
+          # Additional features
         st.markdown("---") 
         st.markdown("## 📋 Additional Analysis")
         
@@ -826,9 +833,41 @@ def main():
             if 'results' in model_data:
                 # Training history
                 history = model_data['results'].get('history', {})
-                if history:
+                if history and any(len(v) > 0 for v in history.values()):
+                    # We have actual training history
                     fig = components['visualizer'].create_training_history_chart(history)
                     st.plotly_chart(fig, use_container_width=True)
+                else:
+                    # No training history available (loaded model)
+                    st.info("📊 **Performance Metrics for Loaded Model**")
+                    
+                    # Show available metrics from model info
+                    train_metrics = model_data['results'].get('train_metrics', {})
+                    if train_metrics:
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            mae = train_metrics.get('mae', 0)
+                            st.metric("📊 MAE", f"{mae:.4f}")
+                        
+                        with col2:
+                            rmse = train_metrics.get('rmse', 0)
+                            st.metric("📈 RMSE", f"{rmse:.4f}")
+                        
+                        with col3:
+                            accuracy = train_metrics.get('directional_accuracy', 0)
+                            st.metric("🎯 Directional Accuracy", f"{accuracy:.2%}")
+                        
+                        with col4:
+                            mse = train_metrics.get('mse', 0)
+                            st.metric("📉 MSE", f"{mse:.4f}")
+                        
+                        st.markdown("---")
+                        st.markdown("**Note:** These metrics are from the original training session. No training history is available for pre-loaded models.")
+                    else:
+                        st.warning("No performance metrics available for this model.")
+            else:
+                st.warning("No model results available.")
         
         with tab2:
             # Feature correlation heatmap
