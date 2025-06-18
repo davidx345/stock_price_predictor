@@ -229,149 +229,116 @@ class ModelManager:
             raise
 
 class DataValidator:
-    """Validates data quality and completeness"""
+    """Validates and fixes data quality issues for stock prediction models"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-    
-    def validate_stock_data(self, df: pd.DataFrame, symbol: str) -> Dict[str, Any]:
+        
+    def validate_and_fix_data(self, data: pd.DataFrame, symbol: str = "Unknown") -> pd.DataFrame:
         """
-        Validate stock data quality
+        Validate and fix common data issues, ensuring all required columns exist
         
         Args:
-            df: Stock data DataFrame
-            symbol: Stock symbol
+            data: DataFrame with stock data
+            symbol: Stock symbol for logging
             
         Returns:
-            Validation results dictionary
+            Fixed DataFrame with all required columns
         """
         try:
-            results = {
-                'symbol': symbol,
-                'valid': True,
-                'issues': [],
-                'stats': {},
-                'recommendations': []
-            }
+            self.logger.info(f"Validating data for {symbol}, shape: {data.shape}")
             
-            # Check basic requirements
-            required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-            missing_columns = [col for col in required_columns if col not in df.columns]
+            # Make a copy to avoid modifying original
+            fixed_data = data.copy()
+            
+            # Required columns for technical analysis and model
+            required_columns = ['SMA_20', 'EMA_12', 'RSI', 'MACD', 'MACD_signal', 
+                              'BB_upper', 'BB_lower', 'volatility', 'price_change']
+            
+            # Check which columns are missing
+            missing_columns = [col for col in required_columns if col not in fixed_data.columns]
             
             if missing_columns:
-                results['valid'] = False
-                results['issues'].append(f"Missing required columns: {missing_columns}")
-            
-            # Check data size
-            if len(df) < 100:
-                results['valid'] = False
-                results['issues'].append(f"Insufficient data: only {len(df)} records")
-            elif len(df) < 500:
-                results['issues'].append(f"Limited data: only {len(df)} records")
-                results['recommendations'].append("Consider using longer time period for better predictions")
-            
-            # Check for missing values
-            missing_values = df.isnull().sum()
-            if missing_values.any():
-                results['issues'].append(f"Missing values found: {missing_values.to_dict()}")
-            
-            # Check for anomalies
-            if 'Close' in df.columns:
-                # Check for zero or negative prices
-                zero_prices = (df['Close'] <= 0).sum()
-                if zero_prices > 0:
-                    results['valid'] = False
-                    results['issues'].append(f"Found {zero_prices} zero or negative prices")
+                self.logger.warning(f"Missing columns for {symbol}: {missing_columns}")
                 
-                # Check for extreme price changes
-                price_changes = df['Close'].pct_change().abs()
-                extreme_changes = (price_changes > 0.5).sum()  # More than 50% change
-                if extreme_changes > 0:
-                    results['issues'].append(f"Found {extreme_changes} extreme price changes (>50%)")
+                # Add missing columns with calculated values if base data exists
+                if 'Close' in fixed_data.columns:
+                    for col in missing_columns:
+                        self.logger.info(f"Adding missing column: {col}")
+                        
+                        if col == 'SMA_20':
+                            fixed_data[col] = fixed_data['Close'].rolling(20).mean()
+                        elif col == 'EMA_12':
+                            fixed_data[col] = fixed_data['Close'].ewm(span=12).mean()
+                        elif col == 'RSI':
+                            # Simple RSI calculation
+                            delta = fixed_data['Close'].diff()
+                            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                            rs = gain / loss
+                            fixed_data[col] = 100 - (100 / (1 + rs))
+                        elif col == 'MACD':
+                            # Simple MACD calculation
+                            ema_12 = fixed_data['Close'].ewm(span=12).mean()
+                            ema_26 = fixed_data['Close'].ewm(span=26).mean()
+                            fixed_data[col] = ema_12 - ema_26
+                        elif col == 'MACD_signal':
+                            if 'MACD' in fixed_data.columns:
+                                fixed_data[col] = fixed_data['MACD'].ewm(span=9).mean()
+                            else:
+                                fixed_data[col] = 0
+                        elif col == 'BB_upper':
+                            sma_20 = fixed_data['Close'].rolling(20).mean()
+                            std_20 = fixed_data['Close'].rolling(20).std()
+                            fixed_data[col] = sma_20 + (std_20 * 2)
+                        elif col == 'BB_lower':
+                            sma_20 = fixed_data['Close'].rolling(20).mean()
+                            std_20 = fixed_data['Close'].rolling(20).std()
+                            fixed_data[col] = sma_20 - (std_20 * 2)
+                        elif col == 'volatility':
+                            fixed_data[col] = fixed_data['Close'].rolling(20).std()
+                        elif col == 'price_change':
+                            fixed_data[col] = fixed_data['Close'].pct_change()
+                        else:
+                            # Default to 0 for unknown indicators
+                            fixed_data[col] = 0
             
-            # Check for duplicate dates
-            if df.index.duplicated().any():
-                results['issues'].append("Duplicate dates found in index")
+            # Fill NaN values for all indicators
+            for col in required_columns:
+                if col in fixed_data.columns:
+                    # Forward fill, then backward fill, then fill remaining with appropriate defaults
+                    fixed_data[col] = fixed_data[col].fillna(method='ffill').fillna(method='bfill')
+                    
+                    # Fill remaining NaN with appropriate defaults
+                    if col == 'RSI':
+                        fixed_data[col] = fixed_data[col].fillna(50)  # Neutral RSI
+                    elif col in ['MACD', 'MACD_signal', 'price_change']:
+                        fixed_data[col] = fixed_data[col].fillna(0)
+                    else:
+                        # For price-based indicators, use the close price or 0
+                        if 'Close' in fixed_data.columns:
+                            fixed_data[col] = fixed_data[col].fillna(fixed_data['Close'].iloc[-1] if len(fixed_data) > 0 else 0)
+                        else:
+                            fixed_data[col] = fixed_data[col].fillna(0)
             
-            # Generate statistics
-            if 'Close' in df.columns:
-                results['stats'] = {
-                    'records': len(df),
-                    'date_range': {
-                        'start': str(df.index.min().date()),
-                        'end': str(df.index.max().date())
-                    },
-                    'price_range': {
-                        'min': float(df['Close'].min()),
-                        'max': float(df['Close'].max()),
-                        'mean': float(df['Close'].mean())
-                    },
-                    'volatility': float(df['Close'].pct_change().std() * np.sqrt(252))  # Annualized
-                }
+            # Ensure we have all required columns
+            final_missing = [col for col in required_columns if col not in fixed_data.columns]
+            if final_missing:
+                self.logger.error(f"Still missing columns after validation: {final_missing}")
+                # Add them with default values
+                for col in final_missing:
+                    fixed_data[col] = 0
             
-            # Add recommendations based on findings
-            if len(results['issues']) == 0:
-                results['recommendations'].append("Data quality looks good for model training")
-            elif results['valid']:
-                results['recommendations'].append("Data has minor issues but should work for training")
-            else:
-                results['recommendations'].append("Data quality issues need to be resolved before training")
+            self.logger.info(f"Data validation complete for {symbol}. Final shape: {fixed_data.shape}")
+            self.logger.info(f"Available columns: {fixed_data.columns.tolist()}")
             
-            return results
+            return fixed_data
             
         except Exception as e:
-            self.logger.error(f"Error validating data: {str(e)}")
-            return {
-                'symbol': symbol,
-                'valid': False,
-                'issues': [f"Validation error: {str(e)}"],
-                'stats': {},
-                'recommendations': ["Fix data validation errors before proceeding"]
-            }
-    
-    def validate_features(self, df: pd.DataFrame, feature_columns: List[str]) -> Dict:
-        """Validate feature engineering results"""
-        try:
-            results = {
-                'valid': True,
-                'issues': [],
-                'feature_stats': {}
-            }
-            
-            for column in feature_columns:
-                if column not in df.columns:
-                    results['valid'] = False
-                    results['issues'].append(f"Missing feature column: {column}")
-                    continue
-                
-                # Check for infinite values
-                inf_count = np.isinf(df[column]).sum()
-                if inf_count > 0:
-                    results['issues'].append(f"Infinite values in {column}: {inf_count}")
-                
-                # Check for NaN values
-                nan_count = df[column].isnull().sum()
-                if nan_count > 0:
-                    results['issues'].append(f"NaN values in {column}: {nan_count}")
-                
-                # Calculate basic statistics
-                if df[column].dtype in ['float64', 'int64']:
-                    results['feature_stats'][column] = {
-                        'mean': float(df[column].mean()),
-                        'std': float(df[column].std()),
-                        'min': float(df[column].min()),
-                        'max': float(df[column].max())
-                    }
-            
-            return results
-            
-        except Exception as e:
-            self.logger.error(f"Error validating features: {str(e)}")
-            return {
-                'valid': False,
-                'issues': [f"Feature validation error: {str(e)}"],
-                'feature_stats': {}
-            }
+            self.logger.error(f"Data validation error for {symbol}: {str(e)}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return data  # Return original data if validation fails
 
 class PerformanceTracker:
     """Track and analyze model performance over time"""

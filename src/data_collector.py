@@ -438,55 +438,108 @@ class FeatureEngineer:
         """
         try:
             data = df.copy()
+            self.logger.info(f"Adding technical indicators to data with shape: {data.shape}")
             
-            # Moving averages
+            # Ensure we have required columns
+            required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+            missing_cols = [col for col in required_cols if col not in data.columns]
+            if missing_cols:
+                self.logger.error(f"Missing required columns: {missing_cols}")
+                return df
+            
+            # Moving averages - exact names expected by model
             data['SMA_20'] = ta.trend.sma_indicator(data['Close'], window=20)
             data['SMA_50'] = ta.trend.sma_indicator(data['Close'], window=50)
             data['EMA_12'] = ta.trend.ema_indicator(data['Close'], window=12)
             data['EMA_26'] = ta.trend.ema_indicator(data['Close'], window=26)
             
-            # RSI
+            # RSI - exact name expected by model
             data['RSI'] = ta.momentum.rsi(data['Close'], window=14)
             
-            # MACD
-            macd = ta.trend.MACD(data['Close'])
-            data['MACD'] = macd.macd()
-            data['MACD_signal'] = macd.macd_signal()
-            data['MACD_histogram'] = macd.macd_diff()
+            # MACD - exact names expected by model
+            try:
+                macd = ta.trend.MACD(data['Close'])
+                data['MACD'] = macd.macd()
+                data['MACD_signal'] = macd.macd_signal()
+                data['MACD_histogram'] = macd.macd_diff()
+            except Exception as e:
+                self.logger.warning(f"MACD calculation failed: {e}, using fallback")
+                # Fallback MACD calculation
+                ema_12 = data['Close'].ewm(span=12).mean()
+                ema_26 = data['Close'].ewm(span=26).mean()
+                data['MACD'] = ema_12 - ema_26
+                data['MACD_signal'] = data['MACD'].ewm(span=9).mean()
+                data['MACD_histogram'] = data['MACD'] - data['MACD_signal']
             
-            # Bollinger Bands
-            bollinger = ta.volatility.BollingerBands(data['Close'])
-            data['BB_upper'] = bollinger.bollinger_hband()
-            data['BB_middle'] = bollinger.bollinger_mavg()
-            data['BB_lower'] = bollinger.bollinger_lband()
-            data['BB_width'] = data['BB_upper'] - data['BB_lower']
+            # Bollinger Bands - exact names expected by model
+            try:
+                bollinger = ta.volatility.BollingerBands(data['Close'])
+                data['BB_upper'] = bollinger.bollinger_hband()
+                data['BB_middle'] = bollinger.bollinger_mavg()
+                data['BB_lower'] = bollinger.bollinger_lband()
+                data['BB_width'] = data['BB_upper'] - data['BB_lower']
+            except Exception as e:
+                self.logger.warning(f"Bollinger Bands calculation failed: {e}, using fallback")
+                # Fallback Bollinger Bands
+                sma_20 = data['Close'].rolling(20).mean()
+                std_20 = data['Close'].rolling(20).std()
+                data['BB_upper'] = sma_20 + (std_20 * 2)
+                data['BB_lower'] = sma_20 - (std_20 * 2)
+                data['BB_middle'] = sma_20
+                data['BB_width'] = data['BB_upper'] - data['BB_lower']
             
             # Stochastic Oscillator
-            data['Stoch_K'] = ta.momentum.stoch(data['High'], data['Low'], data['Close'])
-            data['Stoch_D'] = ta.momentum.stoch_signal(data['High'], data['Low'], data['Close'])
+            try:
+                data['Stoch_K'] = ta.momentum.stoch(data['High'], data['Low'], data['Close'])
+                data['Stoch_D'] = ta.momentum.stoch_signal(data['High'], data['Low'], data['Close'])
+            except Exception as e:
+                self.logger.warning(f"Stochastic calculation failed: {e}")
+                data['Stoch_K'] = 50.0  # Default values
+                data['Stoch_D'] = 50.0
             
             # Average True Range (ATR)
-            data['ATR'] = ta.volatility.average_true_range(data['High'], data['Low'], data['Close'])
+            try:
+                data['ATR'] = ta.volatility.average_true_range(data['High'], data['Low'], data['Close'])
+            except Exception as e:
+                self.logger.warning(f"ATR calculation failed: {e}")
+                data['ATR'] = (data['High'] - data['Low']).rolling(14).mean()
             
             # Volume indicators
-            data['Volume_SMA'] = ta.volume.volume_sma(data['Close'], data['Volume'], window=20)
+            try:
+                data['Volume_SMA'] = ta.volume.volume_sma(data['Close'], data['Volume'], window=20)
+            except Exception as e:
+                self.logger.warning(f"Volume SMA calculation failed: {e}")
+                data['Volume_SMA'] = data['Volume'].rolling(20).mean()
             
-            # Price change indicators
-            data['Price_Change'] = data['Close'].pct_change()
-            data['Price_Change_SMA'] = data['Price_Change'].rolling(window=5).mean()
+            # Price change indicators - exact name expected by model
+            data['price_change'] = data['Close'].pct_change()
+            data['Price_Change_SMA'] = data['price_change'].rolling(window=5).mean()
             
-            # Volatility
-            data['Volatility'] = data['Close'].rolling(window=20).std()
+            # Volatility - exact name expected by model
+            data['volatility'] = data['Close'].rolling(window=20).std()
             
             # Support and Resistance levels
             data['Support'] = data['Low'].rolling(window=20).min()
             data['Resistance'] = data['High'].rolling(window=20).max()
             
-            self.logger.info(f"Added technical indicators, shape: {data.shape}")
+            # Fill NaN values for critical indicators
+            critical_indicators = ['SMA_20', 'EMA_12', 'RSI', 'MACD', 'MACD_signal', 
+                                 'BB_upper', 'BB_lower', 'volatility', 'price_change']
+            
+            for indicator in critical_indicators:
+                if indicator in data.columns:
+                    # Forward fill, then backward fill, then fill remaining with 0
+                    data[indicator] = data[indicator].fillna(method='ffill').fillna(method='bfill').fillna(0)
+            
+            self.logger.info(f"Successfully added technical indicators, final shape: {data.shape}")
+            self.logger.info(f"Available columns: {data.columns.tolist()}")
+            
             return data
             
         except Exception as e:
             self.logger.error(f"Error adding technical indicators: {str(e)}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return df
 
 class DataPreprocessor:

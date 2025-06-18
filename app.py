@@ -53,6 +53,26 @@ except ImportError as e:
     logging.error(f"Import error: {e}")
     st.stop()
 
+# Import error handler
+try:
+    from error_handler import AppErrorHandler, safe_execute
+except ImportError:
+    # Create a dummy error handler if file is missing
+    class AppErrorHandler:
+        def handle_missing_columns_error(self, available_columns, required_columns, symbol):
+            return True
+        def handle_prediction_error(self, error, symbol):
+            st.error(f"Prediction error: {str(error)}")
+        def show_data_debug_info(self, data, symbol):
+            pass
+    
+    def safe_execute(func, *args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+            return None
+
 # Add model compatibility fix for TensorFlow version issues
 def fix_model_compatibility():
     """Fix TensorFlow model compatibility issues"""
@@ -401,6 +421,13 @@ def create_technical_analysis(components, data, symbol):
             # Add technical indicators
             enhanced_data = components['feature_engineer'].add_technical_indicators(data)
             
+            # Validate and fix data to ensure all required columns exist
+            data_validator = DataValidator()
+            enhanced_data = data_validator.validate_and_fix_data(enhanced_data, symbol)
+            
+            # Log column information for debugging
+            logging.getLogger().info(f"Enhanced data columns for {symbol}: {enhanced_data.columns.tolist()}")
+            
             # Create comprehensive chart
             fig = components['visualizer'].create_price_chart_with_indicators(enhanced_data, symbol)
             
@@ -410,6 +437,7 @@ def create_technical_analysis(components, data, symbol):
             
     except Exception as e:
         st.error(f"Error creating technical analysis: {e}")
+        logging.getLogger().error(f"Technical analysis error for {symbol}: {str(e)}")
         return data
 
 def train_or_load_model(components, symbol, settings):
@@ -495,8 +523,45 @@ def make_predictions(model_data, enhanced_data, symbol, settings, components):
         
         model = model_data['model']
         
-        # Prepare recent data for prediction
-        recent_data = enhanced_data[DATA_CONFIG.feature_columns].dropna().tail(settings['lookback_days'])
+        # Validate and fix data before making predictions
+        data_validator = DataValidator()
+        enhanced_data = data_validator.validate_and_fix_data(enhanced_data, symbol)
+        
+        # Check which feature columns are available
+        available_columns = list(enhanced_data.columns)
+        required_columns = DATA_CONFIG.feature_columns
+        
+        # Log debugging information
+        logging.getLogger().info(f"Available columns: {available_columns}")
+        logging.getLogger().info(f"Required columns: {required_columns}")
+          # Find missing columns and available columns
+        missing_columns = [col for col in required_columns if col not in available_columns]
+        available_feature_columns = [col for col in required_columns if col in available_columns]
+        
+        if missing_columns:
+            st.warning(f"⚠️ Some expected features are missing: {missing_columns}")
+            st.info(f"📊 Using available features: {available_feature_columns}")
+        
+        if not available_feature_columns:
+            # Use error handler for better user experience
+            error_handler = AppErrorHandler()
+            if not error_handler.handle_missing_columns_error(
+                available_columns, required_columns, symbol
+            ):
+                return
+            
+            # If user clicked fix button, try to continue with available data
+            st.info("Attempting to use available data columns...")
+            # Use basic columns if no feature columns available
+            basic_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+            available_feature_columns = [col for col in basic_columns if col in available_columns]
+            
+            if not available_feature_columns:
+                st.error("❌ No usable columns found in the data!")
+                return
+        
+        # Use only available feature columns
+        recent_data = enhanced_data[available_feature_columns].dropna().tail(settings['lookback_days'])
         
         if len(recent_data) < settings['lookback_days']:
             st.error(f"Insufficient data for prediction. Need at least {settings['lookback_days']} days.")
@@ -511,21 +576,30 @@ def make_predictions(model_data, enhanced_data, symbol, settings, components):
             scaler = MinMaxScaler()
             normalized_data[column] = scaler.fit_transform(recent_data[[column]])
             scalers[column] = scaler
-        
-        # Make predictions
-        predictions = model.predict_next_days(
-            normalized_data.values, 
-            scalers['Close']
-        )
-        
-        # Display predictions
-        display_predictions(predictions, enhanced_data, symbol, components)
-        
-        # Create prediction chart
-        fig = components['visualizer'].create_prediction_chart(
-            enhanced_data.tail(60), predictions, symbol
-        )
-        st.plotly_chart(fig, use_container_width=True)
+          # Make predictions
+        try:
+            predictions = model.predict_next_days(
+                normalized_data.values, 
+                scalers['Close']
+            )
+            
+            # Display predictions
+            display_predictions(predictions, enhanced_data, symbol, components)
+            
+            # Create prediction chart
+            fig = components['visualizer'].create_prediction_chart(
+                enhanced_data.tail(60), predictions, symbol
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+        except Exception as pred_error:
+            st.error("🚨 **Prediction Error Occurred**")
+            error_handler = AppErrorHandler()
+            error_handler.handle_prediction_error(pred_error, symbol)
+            
+            # Show debug info
+            if st.checkbox("🔍 Show Debug Information"):
+                error_handler.show_data_debug_info(enhanced_data, symbol)
         
     except Exception as e:
         st.error(f"Prediction failed: {e}")
