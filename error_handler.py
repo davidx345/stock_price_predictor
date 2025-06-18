@@ -116,7 +116,47 @@ class AppErrorHandler:
                 st.write(missing_cols)
             else:
                 st.write("No missing values found ✅")
-
+    
+    def handle_generic_error(self, error) -> None:
+        """Handle generic errors with user-friendly messages"""
+        self.logger.error(f"Generic error occurred: {str(error)}")
+        
+        st.error("🚨 **An Error Occurred**")
+        
+        with st.expander("📋 **Error Details**", expanded=False):
+            st.code(str(error))
+        
+        # Provide troubleshooting suggestions based on error type
+        if "timestamp" in str(error).lower() or "datetime" in str(error).lower():
+            st.markdown("""
+            **This appears to be a date/time related issue:**
+            1. The data processing encountered a timestamp problem
+            2. This is usually a temporary issue with data formatting
+            3. Try refreshing the page and selecting the stock again
+            """)
+        elif "connection" in str(error).lower() or "timeout" in str(error).lower():
+            st.markdown("""
+            **This appears to be a connection issue:**
+            1. Check your internet connection
+            2. The data provider may be temporarily unavailable
+            3. Try again in a few minutes
+            """)
+        elif "import" in str(error).lower() or "module" in str(error).lower():
+            st.markdown("""
+            **This appears to be a dependency issue:**
+            1. Some required packages may not be installed properly
+            2. This is usually resolved automatically on refresh
+            3. If the problem persists, try refreshing the page
+            """)
+        else:
+            st.markdown("""
+            **General troubleshooting steps:**
+            1. Refresh the page and try again
+            2. Try a different stock symbol
+            3. Check your internet connection
+            4. Wait a moment and retry
+            """)
+    
 def show_error_recovery_options():
     """Show error recovery options to users"""
     st.markdown("### 🔄 **Recovery Options**")
@@ -129,37 +169,38 @@ def show_error_recovery_options():
     
     with col2:
         if st.button("🏠 **Go to Home**"):
-            st.session_state.clear()
-            st.experimental_rerun()
+            try:
+                # Safe session state clear
+                if hasattr(st, 'session_state') and hasattr(st.session_state, 'clear'):
+                    st.session_state.clear()
+                st.experimental_rerun()
+            except Exception as e:
+                st.warning(f"Navigation failed: {e}")
     
     with col3:
         if st.button("📊 **Try Different Stock**"):
-            if 'symbol' in st.session_state:
-                del st.session_state['symbol']
-            st.experimental_rerun()
+            try:
+                # Safe session state access
+                if hasattr(st, 'session_state') and 'symbol' in st.session_state:
+                    del st.session_state['symbol']
+                st.experimental_rerun()
+            except Exception as e:
+                st.warning(f"Stock change failed: {e}")
 
-def safe_execute(func, *args, error_handler=None, **kwargs):
-    """
-    Safely execute a function with error handling
-    
-    Args:
-        func: Function to execute
-        *args: Function arguments
-        error_handler: Custom error handler function
-        **kwargs: Function keyword arguments
-    
-    Returns:
-        Function result or None if error occurred
-    """
-    try:
-        return func(*args, **kwargs)
-    except Exception as e:
-        logger = logging.getLogger(__name__)
-        logger.error(f"Error executing {func.__name__}: {str(e)}")
-        
-        if error_handler:
-            error_handler(e)
-        else:
-            st.error(f"An error occurred: {str(e)}")
-            
-        return None
+# Create global instance for easy access
+_error_handler_instance = AppErrorHandler()
+
+# Export functions for backward compatibility
+def error_handler(error):
+    """Global error handler function"""
+    return _error_handler_instance.handle_generic_error(error)
+
+def safe_execute(func, *args, **kwargs):
+    """Safely execute a function with error handling"""
+    return _error_handler_instance.safe_execute(func, *args, **kwargs)
+
+# Export the class as ErrorHandler for compatibility
+ErrorHandler = AppErrorHandler
+
+# Make all exports available
+__all__ = ['AppErrorHandler', 'ErrorHandler', 'error_handler', 'safe_execute']

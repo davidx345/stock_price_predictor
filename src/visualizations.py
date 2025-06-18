@@ -249,14 +249,24 @@ class StockVisualizer:
                         showlegend=False
                     )
                 )
-            
-            # Add vertical line to separate historical and predicted data
-            fig.add_vline(
-                x=historical_data.index[-1],
-                line_dash="dash",
-                line_color="gray",
-                annotation_text="Prediction Start"
-            )
+              # Add vertical line to separate historical and predicted data
+            try:
+                # Convert timestamp to string to avoid pandas timestamp arithmetic issues
+                last_date = historical_data.index[-1]
+                if hasattr(last_date, 'strftime'):
+                    last_date_str = last_date.strftime('%Y-%m-%d')
+                else:
+                    last_date_str = str(last_date)
+                
+                fig.add_vline(
+                    x=last_date,
+                    line_dash="dash",
+                    line_color="gray",
+                    annotation_text="Prediction Start"
+                )
+            except Exception as e:
+                self.logger.warning(f"Could not add vertical line: {e}")
+                # Continue without the vertical line
             
             fig.update_layout(
                 title=f"{symbol} - Price Prediction",
