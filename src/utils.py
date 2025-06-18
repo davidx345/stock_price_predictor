@@ -305,9 +305,8 @@ class DataValidator:
             
             # Fill NaN values for all indicators
             for col in required_columns:
-                if col in fixed_data.columns:
-                    # Forward fill, then backward fill, then fill remaining with appropriate defaults
-                    fixed_data[col] = fixed_data[col].fillna(method='ffill').fillna(method='bfill')
+                if col in fixed_data.columns:                    # Forward fill, then backward fill, then fill remaining with appropriate defaults
+                    fixed_data[col] = fixed_data[col].ffill().bfill()
                     
                     # Fill remaining NaN with appropriate defaults
                     if col == 'RSI':
@@ -338,9 +337,7 @@ class DataValidator:
             self.logger.error(f"Data validation error for {symbol}: {str(e)}")
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
-            return data  # Return original data if validation fails
-
-    def validate_stock_data(self, data: pd.DataFrame, symbol: str = "Unknown") -> Dict:
+            return data  # Return original data if validation fails    def validate_stock_data(self, data: pd.DataFrame, symbol: str = "Unknown") -> Dict:
         """
         Validate stock data and return validation results (for app.py compatibility)
         
@@ -359,7 +356,19 @@ class DataValidator:
             # Check basic requirements
             if data is None or data.empty:
                 issues.append("No data available")
-                return {'valid': False, 'issues': issues}
+                return {
+                    'valid': False, 
+                    'issues': issues,
+                    'data_shape': (0, 0),
+                    'available_columns': [],
+                    'stats': {
+                        'latest_price': 0,
+                        'price_change': 0,
+                        'volatility': 0,
+                        'date_range': "N/A",
+                        'total_records': 0
+                    }
+                }
             
             # Check required columns
             required_basic_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
@@ -385,6 +394,35 @@ class DataValidator:
             if missing_indicators:
                 issues.append(f"Missing technical indicators: {len(missing_indicators)} indicators need calculation")
             
+            # Calculate stats for the app
+            stats = {}
+            if not data.empty and 'Close' in data.columns:
+                try:
+                    stats.update({
+                        'latest_price': float(data['Close'].iloc[-1]) if len(data) > 0 else 0,
+                        'price_change': float(data['Close'].pct_change().iloc[-1]) if len(data) > 1 else 0,
+                        'volatility': float(data['Close'].pct_change().std() * (252**0.5)) if len(data) > 20 else 0,
+                        'date_range': f"{data.index[0].strftime('%Y-%m-%d')} to {data.index[-1].strftime('%Y-%m-%d')}" if len(data) > 0 else "N/A",
+                        'total_records': len(data)
+                    })
+                except Exception as e:
+                    self.logger.warning(f"Error calculating stats: {e}")
+                    stats = {
+                        'latest_price': 0,
+                        'price_change': 0,
+                        'volatility': 0,
+                        'date_range': "N/A",
+                        'total_records': len(data) if not data.empty else 0
+                    }
+            else:
+                stats = {
+                    'latest_price': 0,
+                    'price_change': 0,
+                    'volatility': 0,
+                    'date_range': "N/A",
+                    'total_records': 0
+                }
+            
             # Determine if data is valid
             is_valid = len(issues) == 0 or all('Missing technical indicators' in issue for issue in issues)
             
@@ -394,7 +432,8 @@ class DataValidator:
                 'valid': is_valid,
                 'issues': issues,
                 'data_shape': data.shape,
-                'available_columns': data.columns.tolist()
+                'available_columns': data.columns.tolist(),
+                'stats': stats
             }
             
         except Exception as e:
@@ -403,7 +442,13 @@ class DataValidator:
                 'valid': False, 
                 'issues': [f"Validation error: {str(e)}"],
                 'data_shape': (0, 0),
-                'available_columns': []
+                'available_columns': [],
+                'stats': {
+                    'latest_price': 0,
+                    'price_change': 0,                    'volatility': 0,
+                    'date_range': "N/A",
+                    'total_records': 0
+                }
             }
 
 class PerformanceTracker:

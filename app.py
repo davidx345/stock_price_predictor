@@ -391,8 +391,8 @@ def load_and_display_data(components, symbol, period):
             
             # Check if sample data is being used
             if hasattr(data, 'attrs') and data.attrs.get('sample_data', False):
-                st.warning("⚠️ **Demo Mode**: Using sample data because external API data sources are currently unavailable. This is for demonstration purposes only.")
-              # Validate data
+                st.warning("⚠️ **Demo Mode**: Using sample data because external API data sources are currently unavailable. This is for demonstration purposes only.")            # Validate data
+            validation = None
             try:
                 validation = components['data_validator'].validate_stock_data(data, symbol)
                 
@@ -407,17 +407,64 @@ def load_and_display_data(components, symbol, period):
                 st.warning("⚠️ Data validation method not available, proceeding with basic validation")
                 logging.getLogger().warning(f"DataValidator method error: {e}")
                 
-                # Basic validation
+                # Basic validation and create fallback validation result
                 if data is not None and not data.empty and len(data) > 30:
                     st.success(f"✅ Data loaded successfully: {len(data)} records")
+                    validation = {
+                        'valid': True,
+                        'issues': [],
+                        'stats': {
+                            'latest_price': float(data['Close'].iloc[-1]) if 'Close' in data.columns and len(data) > 0 else 0,
+                            'price_change': float(data['Close'].pct_change().iloc[-1]) if 'Close' in data.columns and len(data) > 1 else 0,
+                            'volatility': float(data['Close'].pct_change().std() * (252**0.5)) if 'Close' in data.columns and len(data) > 20 else 0,
+                            'date_range': f"{data.index[0].strftime('%Y-%m-%d')} to {data.index[-1].strftime('%Y-%m-%d')}" if len(data) > 0 else "N/A",
+                            'total_records': len(data)
+                        }
+                    }
                 else:
                     st.error("❌ Insufficient data loaded")
+                    validation = {
+                        'valid': False,
+                        'issues': ['Insufficient data'],
+                        'stats': {
+                            'latest_price': 0,
+                            'price_change': 0,
+                            'volatility': 0,
+                            'date_range': "N/A",
+                            'total_records': 0
+                        }
+                    }
             
             except Exception as e:
                 st.error(f"❌ Data validation error: {e}")
                 logging.getLogger().error(f"Data validation failed: {e}")
+                # Create fallback validation result
+                validation = {
+                    'valid': False,
+                    'issues': [f'Validation error: {e}'],
+                    'stats': {
+                        'latest_price': 0,
+                        'price_change': 0,
+                        'volatility': 0,
+                        'date_range': "N/A",
+                        'total_records': len(data) if data is not None and not data.empty else 0
+                    }
+                }
             
-            # Display data statistics
+            # Ensure validation exists with default stats
+            if validation is None:
+                validation = {
+                    'valid': False,
+                    'issues': ['Validation not performed'],
+                    'stats': {
+                        'latest_price': float(data['Close'].iloc[-1]) if data is not None and not data.empty and 'Close' in data.columns and len(data) > 0 else 0,
+                        'price_change': 0,
+                        'volatility': 0,
+                        'date_range': "N/A",
+                        'total_records': len(data) if data is not None and not data.empty else 0
+                    }
+                }
+              # Display data statistics
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
@@ -428,29 +475,49 @@ def load_and_display_data(components, symbol, period):
                 )
             
             with col2:
-                price_change = data['Close'].iloc[-1] - data['Close'].iloc[-2]
-                st.metric(
-                    "💲 Latest Price",
-                    f"${data['Close'].iloc[-1]:.2f}",
-                    delta=f"{price_change:.2f}",
-                    help="Most recent closing price"
-                )
+                try:
+                    price_change = data['Close'].iloc[-1] - data['Close'].iloc[-2] if len(data) > 1 else 0
+                    st.metric(
+                        "💲 Latest Price",
+                        f"${data['Close'].iloc[-1]:.2f}",
+                        delta=f"{price_change:.2f}",
+                        help="Most recent closing price"
+                    )
+                except (IndexError, KeyError):
+                    st.metric(
+                        "💲 Latest Price",
+                        "N/A",
+                        help="Most recent closing price"
+                    )
             
             with col3:
-                volatility = validation['stats'].get('volatility', 0)
-                st.metric(
-                    "📈 Volatility",
-                    f"{volatility:.1%}",
-                    help="Annualized volatility"
-                )
+                try:
+                    volatility = validation.get('stats', {}).get('volatility', 0) if validation else 0
+                    st.metric(
+                        "📈 Volatility",
+                        f"{volatility:.1%}",
+                        help="Annualized volatility"
+                    )
+                except (TypeError, ValueError):
+                    st.metric(
+                        "📈 Volatility",
+                        "N/A",
+                        help="Annualized volatility"
+                    )
             
             with col4:
-                date_range = validation['stats']['date_range']
-                st.metric(
-                    "📅 Date Range",
-                    f"{len(data)} days",
-                    help=f"From {date_range['start']} to {date_range['end']}"
-                )
+                try:
+                    date_range = validation.get('stats', {}).get('date_range', 'N/A') if validation else 'N/A'
+                    st.metric(
+                        "📅 Date Range",
+                        f"{len(data)} days",
+                        help=f"Data range: {date_range}"
+                    )
+                except (TypeError, ValueError):
+                    st.metric(
+                        "📅 Date Range",
+                        f"{len(data)} days",                        help="Data range information"
+                    )
             
             return data
             
@@ -620,8 +687,7 @@ def make_predictions(model_data, enhanced_data, symbol, settings, components):
         for column in recent_data.columns:
             scaler = MinMaxScaler()
             normalized_data[column] = scaler.fit_transform(recent_data[[column]])
-            scalers[column] = scaler
-          # Make predictions
+            scalers[column] = scaler        # Make predictions
         try:
             predictions = model.predict_next_days(
                 normalized_data.values, 
@@ -639,12 +705,16 @@ def make_predictions(model_data, enhanced_data, symbol, settings, components):
             
         except Exception as pred_error:
             st.error("🚨 **Prediction Error Occurred**")
-            error_handler = AppErrorHandler()
-            error_handler.handle_prediction_error(pred_error, symbol)
-            
-            # Show debug info
-            if st.checkbox("🔍 Show Debug Information"):
-                error_handler.show_data_debug_info(enhanced_data, symbol)
+            try:
+                from error_handler import error_handler
+                error_info = error_handler.handle_model_error(pred_error, "prediction")
+                error_handler.display_error(error_info)
+            except ImportError:
+                st.error(f"Prediction error: {pred_error}")
+                if st.checkbox("🔍 Show Debug Information"):
+                    st.code(str(pred_error))
+                    import traceback
+                    st.code(traceback.format_exc())
         
     except Exception as e:
         st.error(f"Prediction failed: {e}")

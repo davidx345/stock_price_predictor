@@ -529,7 +529,7 @@ class FeatureEngineer:
             for indicator in critical_indicators:
                 if indicator in data.columns:
                     # Forward fill, then backward fill, then fill remaining with 0
-                    data[indicator] = data[indicator].fillna(method='ffill').fillna(method='bfill').fillna(0)
+                    data[indicator] = data[indicator].ffill().bfill().fillna(0)
             
             self.logger.info(f"Successfully added technical indicators, final shape: {data.shape}")
             self.logger.info(f"Available columns: {data.columns.tolist()}")
