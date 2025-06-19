@@ -165,25 +165,50 @@ def show_error_recovery_options():
     
     with col1:
         if st.button("🔄 **Refresh Page**"):
-            st.experimental_rerun()
+            # Use modern rerun method
+            try:
+                st.rerun()
+            except AttributeError:
+                # Fallback for older Streamlit versions
+                st.experimental_rerun()
+            except Exception as e:
+                st.warning(f"Refresh failed: {e}")
     
     with col2:
         if st.button("🏠 **Go to Home**"):
             try:
-                # Safe session state clear
-                if hasattr(st, 'session_state') and hasattr(st.session_state, 'clear'):
-                    st.session_state.clear()
-                st.experimental_rerun()
+                # Safe session state clear with initialization check
+                if hasattr(st, 'session_state'):
+                    try:
+                        if hasattr(st.session_state, 'clear'):
+                            st.session_state.clear()
+                    except Exception:
+                        pass  # Continue even if clear fails
+                
+                # Use modern rerun method
+                try:
+                    st.rerun()
+                except AttributeError:
+                    st.experimental_rerun()
             except Exception as e:
                 st.warning(f"Navigation failed: {e}")
     
     with col3:
         if st.button("📊 **Try Different Stock**"):
             try:
-                # Safe session state access
-                if hasattr(st, 'session_state') and 'symbol' in st.session_state:
-                    del st.session_state['symbol']
-                st.experimental_rerun()
+                # Safe session state access with initialization check
+                if hasattr(st, 'session_state'):
+                    try:
+                        if 'symbol' in st.session_state:
+                            del st.session_state['symbol']
+                    except Exception:
+                        pass  # Continue even if deletion fails
+                
+                # Use modern rerun method
+                try:
+                    st.rerun()
+                except AttributeError:
+                    st.experimental_rerun()
             except Exception as e:
                 st.warning(f"Stock change failed: {e}")
 

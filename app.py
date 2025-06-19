@@ -574,8 +574,7 @@ def train_or_load_model(components, symbol, settings):
                     options=model_options,
                     help="Select an existing trained model"
                 )
-                
-                # Load selected model
+                  # Load selected model
                 model_index = model_options.index(selected_option)
                 selected_model = available_models[model_index]
                 return load_existing_model(components, selected_model)
@@ -588,7 +587,11 @@ def train_or_load_model(components, symbol, settings):
         
         with col2:
             if st.button("🔄 Refresh Models", help="Refresh the list of available models"):
-                st.experimental_rerun()
+                try:
+                    st.rerun()
+                except AttributeError:
+                    # Fallback for older Streamlit versions
+                    st.experimental_rerun()
                 
     except Exception as e:
         st.error(f"Error managing models: {e}")
@@ -783,6 +786,19 @@ def display_predictions(predictions, historical_data, symbol, components):
 
 def main():
     """Main application"""
+    # Initialize session state early to prevent SessionInfo errors
+    try:
+        if not hasattr(st, 'session_state'):
+            # For older Streamlit versions, this won't work, but that's OK
+            pass
+        else:
+            # Initialize any required session state variables
+            if 'initialized' not in st.session_state:
+                st.session_state.initialized = True
+    except Exception as e:
+        # Ignore session state initialization errors
+        pass
+    
     # Load CSS and display header
     load_custom_css()
     display_header()
