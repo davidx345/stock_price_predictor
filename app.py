@@ -227,7 +227,7 @@ def display_header():
             font-size: 3rem;
             font-weight: bold;
             margin-bottom: 0.5rem;
-        ">🚀 AI Stock Price Predictor</h1>
+        "> AI Stock Price Predictor</h1>
         <p style="
             font-size: 1.2rem;
             color: #666;
@@ -277,7 +277,7 @@ def create_sidebar():
         )
         
         # Prediction settings
-        st.markdown("### 🔮 Prediction Settings")
+        st.markdown("###  Prediction Settings")
         
         forecast_days = st.slider(
             "Forecast Days",
@@ -642,7 +642,7 @@ def load_existing_model(components, model_info):
 def make_predictions(model_data, enhanced_data, symbol, settings, components):
     """Make and display predictions"""
     try:
-        st.markdown("### 🔮 Price Predictions")
+        st.markdown("###  Price Predictions")
         
         model = model_data['model']
         
@@ -722,7 +722,7 @@ def make_predictions(model_data, enhanced_data, symbol, settings, components):
                 error_handler.display_error(error_info)
             except ImportError:
                 st.error(f"Prediction error: {pred_error}")
-                if st.checkbox("🔍 Show Debug Information"):
+                if st.checkbox(" Show Debug Information"):
                     st.code(str(pred_error))
                     import traceback
                     st.code(traceback.format_exc())
@@ -830,7 +830,7 @@ def main():
         
         # Model training/loading section
         st.markdown("---")
-        st.markdown("## 🤖 AI Model")
+        st.markdown("##  AI Model")
         
         model_data = train_or_load_model(components, settings['symbol'], settings)
         if model_data is None:
